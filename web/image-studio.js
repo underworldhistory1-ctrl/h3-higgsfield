@@ -104,7 +104,7 @@ function handleSocket(message){
 
 function buildGraph(settings,uploads,token){
   const files=profileFiles[settings.profile];if(!files)throw Error("Selected model profile is invalid.");
-  const prompt=settings.transparent&&settings.mode==="create"?`This is an RGBA image with transparency. ${settings.prompt.replace(/\.+$/,'')}. The image has an alpha channel and a transparent background.`:settings.prompt;
+  const prompt=settings.transparent&&settings.mode==="create"?`This is an RGBA format image with transparency. ${settings.prompt.replace(/\.+$/,'')}. The image has an alpha channel and a transparent background.`:settings.prompt;
   const metadata={kind:"image",...settings,prompt,references:uploads.map(name=>name.split(/[\\/]/).pop()),submitted_at:Date.now()/1000,token};
   const graph={
     unet:{class_type:"UNETLoader",inputs:{unet_name:files.unet,weight_dtype:"default"}},
@@ -144,11 +144,11 @@ async function generate(){
     if(settings.mode==="edit")for(let i=0;i<state.refs.length;i++){const name=await uploadOne(state.refs[i].file,i);state.uploaded.push(name);}
     const token=crypto.randomUUID().replace(/-/g,"").slice(0,12),prompt=buildGraph(settings,state.uploaded,token);openSocket();
     const response=await fetch(api("/prompt"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,client_id:state.clientId}),signal:state.abort.signal});const data=await response.json();if(!response.ok||!data.prompt_id)throw Error(nodeError(data));
-    state.activePromptId=data.prompt_id;localStorage.setItem("qwen.activePromptId",data.prompt_id);setProgress("Queued or loading Qwen Image",8,estimateSeconds(),true);pollQueue();pollHistory(false);
+    state.activePromptId=data.prompt_id;localStorage.setItem("qwen.activePromptId",data.prompt_id);localStorage.setItem("qwen.activeJob",JSON.stringify({promptId:data.prompt_id,settings:state.settings,started:state.started,uploaded:state.uploaded}));setProgress("Queued or loading Qwen Image",8,estimateSeconds(),true);pollQueue();pollHistory(false);
   }catch(error){if(error.name==="AbortError"){await finishFailure("Cancelled",true);}else await finishFailure(error.message,false);}
 }
 function nodeError(data){const errors=[];if(data.error?.message)errors.push(data.error.message);for(const [id,node] of Object.entries(data.node_errors||{}))for(const error of node.errors||[])errors.push(`${id}: ${error.message||""} ${error.details||""}`.trim());return (errors.join(" · ")||"ComfyUI rejected the image graph").slice(0,700);}
-async function finishFailure(message,cancelled){state.activePromptId=null;state.completing=false;localStorage.removeItem("qwen.activePromptId");await cleanupUploads();setBusy(false);setProgress(cancelled?"Cancelled":"Generation failed",0,null);showStage(cancelled?"Generation cancelled":"Generation failed",cancelled?"Your prompt and references are still here.":message);if(!cancelled)showError(message);}
+async function finishFailure(message,cancelled){state.activePromptId=null;state.completing=false;localStorage.removeItem("qwen.activePromptId");localStorage.removeItem("qwen.activeJob");await cleanupUploads();setBusy(false);setProgress(cancelled?"Cancelled":"Generation failed",0,null);showStage(cancelled?"Generation cancelled":"Generation failed",cancelled?"Your prompt and references are still here.":message);if(!cancelled)showError(message);}
 function failGeneration(message){finishFailure(message,false);}
 $("generate").onclick=generate;
 $("cancel").onclick=async()=>{
@@ -164,9 +164,9 @@ async function pollHistory(force=false){
 }
 async function completeGeneration(file){
   if(state.completing)return;state.completing=true;
-  const elapsed=(Date.now()-state.started)/1000;const filename=file.filename;await fetch(api("/h3_studio/image_details"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename,render_seconds:elapsed,settings:state.settings})});
-  const [w,h]=dimensions(),key=`qwen.eta.${state.settings.mode}.${state.settings.profile}.${w}x${h}.${state.settings.steps}`;let samples=[];try{samples=JSON.parse(localStorage.getItem(key)||"[]");}catch{}samples.push(elapsed);localStorage.setItem(key,JSON.stringify(samples.slice(-8)));
-  state.activePromptId=null;localStorage.removeItem("qwen.activePromptId");await cleanupUploads();setBusy(false);setProgress("Completed",100,0);$("timer").textContent="Actual time: "+fmt(elapsed);await loadLibrary(true);const entry=state.results.find(item=>item.filename===filename)||{filename,settings:state.settings};showImage(entry);showError("");state.completing=false;
+  const elapsed=(Date.now()-state.started)/1000;const filename=file.filename,settings=state.settings||{};await fetch(api("/h3_studio/image_details"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename,render_seconds:elapsed,settings})});
+  if(settings.mode&&settings.profile&&settings.width&&settings.height&&settings.steps){const key=`qwen.eta.${settings.mode}.${settings.profile}.${settings.width}x${settings.height}.${settings.steps}`;let samples=[];try{samples=JSON.parse(localStorage.getItem(key)||"[]");}catch{}samples.push(elapsed);localStorage.setItem(key,JSON.stringify(samples.slice(-8)));}
+  state.activePromptId=null;localStorage.removeItem("qwen.activePromptId");localStorage.removeItem("qwen.activeJob");await cleanupUploads();setBusy(false);setProgress("Completed",100,0);$("timer").textContent="Actual time: "+fmt(elapsed);await loadLibrary(true);const entry=state.results.find(item=>item.filename===filename)||{filename,settings};showImage(entry);showError("");state.completing=false;
 }
 function imageUrl(entry){return api("/h3_studio/image_file?"+new URLSearchParams({filename:entry.filename,_time:String(entry.modified||Date.now())}));}
 function showImage(entry){state.current=entry;const image=document.createElement("img");image.src=imageUrl(entry);image.alt="Generated Qwen image";$("stage").replaceChildren(image);$("currentActions").classList.remove("hidden");}
@@ -187,5 +187,5 @@ $("randomSeed").onclick=()=>{$("seed").value=Math.floor(Math.random()*2**48);sav
 for(const id of ["prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize"]){$(id).addEventListener("input",()=>{updateSettings();saveDraft();});}
 window.addEventListener("focus",()=>loadLibrary(false));
 state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt)$("remaining").textContent="Time remaining: "+fmt(Math.max(0,estimateSeconds()-elapsed));}},1000);
-async function resume(){if(!state.activePromptId)return;state.busy=true;state.started=Date.now();setBusy(true);setProgress("Restoring active generation",5,null,true);openSocket();pollQueue();pollHistory(false);}
+async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(localStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];}else{state.started=Date.now();}state.busy=true;setBusy(true);setProgress("Restoring active generation",5,null,true);openSocket();pollQueue();pollHistory(false);}
 restoreDraft();renderRefs();updateSettings();loadLibrary(false);checkConnection().then(resume);

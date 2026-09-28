@@ -29,6 +29,7 @@ class ImageUiContractTests(unittest.TestCase):
         self.assertIn("buildGraph", script)
         self.assertIn("state.refs.length>=10", script)
         self.assertIn("activePromptId", script)
+        self.assertIn("qwen.activeJob", script)
         self.assertIn("new WebSocket", script)
         self.assertIn("QwenStudioSaveImage", script)
 
