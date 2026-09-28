@@ -9,7 +9,7 @@ BIND=127.0.0.1
 AUTO_START=1
 COMFY_REVISION="3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251"
 H3_VAE_FIX_MARKER='strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]'
-QWEN_NODE_FILE_REL='comfy_extras/nodes_qwen_image.py'
+QWEN_NODE_FILE_REL='comfy_extras/nodes_qwen.py'
 
 usage() {
     cat <<'EOF'

@@ -166,7 +166,7 @@ def prepare_comfy(root, git):
 def ensure_native_nodes(root, git):
     node_file = root / "comfy_extras" / "nodes_minimax_h3.py"
     vae_file = root / "comfy" / "ldm" / "minimax" / "vae.py"
-    qwen_file = root / "comfy_extras" / "nodes_qwen_image.py"
+    qwen_file = root / "comfy_extras" / "nodes_qwen.py"
     native_ready = node_file.is_file() and "MiniMaxH3ReferenceToVideo" in node_file.read_text(encoding="utf-8")
     vae_ready = vae_file.is_file() and H3_VAE_FIX_MARKER in vae_file.read_text(encoding="utf-8")
     qwen_ready = qwen_file.is_file() and all(marker in qwen_file.read_text(encoding="utf-8") for marker in QWEN_NODE_MARKERS)

@@ -8,10 +8,13 @@ on:
       - Dockerfile.salad
       - .dockerignore
       - deploy/salad/**
+      - deploy/download_qwen_image_models.py
       - web/**
       - workflows/**
       - __init__.py
       - h3_video_save.py
+      - qwen_image.py
+      - tests/**
       - promptwriter.py
       - .github/workflows/salad-image.yml
 
@@ -31,7 +34,8 @@ jobs:
       - name: Validate deployment files
         run: |
           bash -n deploy/salad/entrypoint.sh
-          python -m py_compile deploy/download_h3_models.py deploy/download_optional_loras.py deploy/make_h3_landing.py
+          python -m py_compile deploy/download_h3_models.py deploy/download_optional_loras.py deploy/download_qwen_image_models.py deploy/make_h3_landing.py
+          python -m unittest discover -s tests -v
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:

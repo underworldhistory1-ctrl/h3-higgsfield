@@ -104,7 +104,7 @@ def _integer(value, name, minimum, maximum):
 def _transparent_prompt(prompt):
     clean = prompt.strip().rstrip(".")
     return (
-        "This is an RGBA image with transparency. " + clean
+        "This is an RGBA format image with transparency. " + clean
         + ". The image has an alpha channel and a transparent background."
     )
 

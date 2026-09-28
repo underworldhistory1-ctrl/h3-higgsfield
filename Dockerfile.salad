@@ -2,7 +2,7 @@
 FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG COMFY_REVISION=fc584aaa226560ccdfe70c2bcfe9424af1adeb04
+ARG COMFY_REVISION=3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251
 ARG SPECTRUM_REVISION=5161f0457bc8c52535212d6783eee73f439e1537
 ARG MOTION_CACHE_REVISION=bc2894102b2486661884371259a27080b0b137bf
 
@@ -42,6 +42,8 @@ COPY deploy/salad/entrypoint.sh /opt/h3-salad/entrypoint.sh
 
 RUN grep -q MiniMaxH3ReferenceToVideo "${COMFY_ROOT}/comfy_extras/nodes_minimax_h3.py" \
     && grep -Fq 'strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]' "${COMFY_ROOT}/comfy/ldm/minimax/vae.py" \
+    && grep -q TextEncodeQwenImage21 "${COMFY_ROOT}/comfy_extras/nodes_qwen.py" \
+    && grep -q QwenImage21Cache "${COMFY_ROOT}/comfy_extras/nodes_qwen.py" \
     && python "${COMFY_ROOT}/custom_nodes/h3_studio/deploy/make_h3_landing.py" \
     && chmod 0755 /opt/h3-salad/entrypoint.sh \
     && useradd --uid 10001 --create-home --shell /bin/bash h3 \
