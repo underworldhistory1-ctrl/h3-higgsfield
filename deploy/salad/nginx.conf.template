@@ -1,3 +1,4 @@
+user h3;
 pid /tmp/nginx.pid;
 error_log /dev/stderr info;
 
@@ -47,4 +48,3 @@ http {
         }
     }
 }
-

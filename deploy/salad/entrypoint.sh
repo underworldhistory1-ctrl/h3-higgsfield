@@ -31,6 +31,7 @@ for name in models input output user; do
 done
 
 htpasswd -bc /run/h3/htpasswd "${H3_UI_USER:-h3}" "$H3_UI_PASSWORD" >/dev/null
+chown h3:h3 /run/h3/htpasswd
 chmod 600 /run/h3/htpasswd
 cp /opt/h3-salad/nginx.conf.template /run/h3/nginx.conf
 rm -f "$READY_FILE"
