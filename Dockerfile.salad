@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1.7
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG COMFY_REVISION=fc584aaa226560ccdfe70c2bcfe9424af1adeb04
+ARG SPECTRUM_REVISION=5161f0457bc8c52535212d6783eee73f439e1537
+ARG MOTION_CACHE_REVISION=bc2894102b2486661884371259a27080b0b137bf
+
+ENV COMFY_ROOT=/opt/ComfyUI \
+    H3_DATA_ROOT=/workspace \
+    HF_HOME=/workspace/.cache/huggingface \
+    HF_XET_HIGH_PERFORMANCE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       apache2-utils ca-certificates curl ffmpeg git nginx-light rclone tini \
+       libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git init "${COMFY_ROOT}" \
+    && git -C "${COMFY_ROOT}" remote add origin https://github.com/Comfy-Org/ComfyUI.git \
+    && git -C "${COMFY_ROOT}" fetch --depth 1 origin "${COMFY_REVISION}" \
+    && git -C "${COMFY_ROOT}" checkout --detach -q FETCH_HEAD \
+    && python -m pip install --no-cache-dir -r "${COMFY_ROOT}/requirements.txt" av 'huggingface_hub[hf_xet]'
+
+RUN mkdir -p "${COMFY_ROOT}/custom_nodes" \
+    && git clone --filter=blob:none https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3.git \
+       "${COMFY_ROOT}/custom_nodes/ComfyUI-Spectrum-MiniMax-H3" \
+    && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-Spectrum-MiniMax-H3" checkout --detach -q "${SPECTRUM_REVISION}" \
+    && git clone --filter=blob:none https://github.com/starsFriday/ComfyUI-MiniMax-H3-MotionCache.git \
+       "${COMFY_ROOT}/custom_nodes/ComfyUI-MiniMax-H3-MotionCache" \
+    && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-MiniMax-H3-MotionCache" checkout --detach -q "${MOTION_CACHE_REVISION}"
+
+COPY --chown=10001:10001 . "${COMFY_ROOT}/custom_nodes/h3_studio"
+COPY deploy/salad/nginx.conf.template /opt/h3-salad/nginx.conf.template
+COPY deploy/salad/entrypoint.sh /opt/h3-salad/entrypoint.sh
+
+RUN grep -q MiniMaxH3ReferenceToVideo "${COMFY_ROOT}/comfy_extras/nodes_minimax_h3.py" \
+    && grep -Fq 'strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]' "${COMFY_ROOT}/comfy/ldm/minimax/vae.py" \
+    && python "${COMFY_ROOT}/custom_nodes/h3_studio/deploy/make_h3_landing.py" \
+    && chmod 0755 /opt/h3-salad/entrypoint.sh \
+    && useradd --uid 10001 --create-home --shell /bin/bash h3 \
+    && mkdir -p /workspace /run/h3 /tmp/nginx/client /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi \
+    && chown -R h3:h3 /workspace /run/h3 /tmp/nginx /opt/h3-salad "${COMFY_ROOT}"
+
+USER h3
+WORKDIR "${COMFY_ROOT}"
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20m --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8000/ready || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/h3-salad/entrypoint.sh"]

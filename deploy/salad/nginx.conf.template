@@ -1,0 +1,50 @@
+pid /tmp/nginx.pid;
+error_log /dev/stderr info;
+
+events { worker_connections 1024; }
+
+http {
+    access_log /dev/stdout;
+    client_body_temp_path /tmp/nginx/client;
+    proxy_temp_path /tmp/nginx/proxy;
+    fastcgi_temp_path /tmp/nginx/fastcgi;
+    uwsgi_temp_path /tmp/nginx/uwsgi;
+    scgi_temp_path /tmp/nginx/scgi;
+    client_max_body_size 600m;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen 8000;
+        listen [::]:8000;
+        server_name _;
+
+        location = /started { access_log off; return 200 'started\n'; }
+        location = /live { access_log off; return 200 'live\n'; }
+        location = /ready {
+            access_log off;
+            root /run/h3;
+            try_files /ready.flag =503;
+        }
+
+        location / {
+            auth_basic "H3 Studio";
+            auth_basic_user_file /run/h3/htpasswd;
+            proxy_pass http://127.0.0.1:8188;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_read_timeout 7d;
+            proxy_send_timeout 7d;
+            proxy_buffering off;
+        }
+    }
+}
+

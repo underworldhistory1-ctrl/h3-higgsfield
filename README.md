@@ -74,6 +74,10 @@ For a different Linux ComfyUI location, use `bash install.sh --comfy-root /path/
 
 Model downloads can require accepting the [MiniMax H3 license](https://huggingface.co/MiniMaxAI/MiniMax-H3) or Hugging Face access. The model weights, private reference files, personal video library, and server passwords are **not** in this Git repository; only the two public demo clips above are included. Re-running the installer checks and reuses valid cached weights. For a portable handoff or optional video-library restore, see [the server guide](deploy/CLOUD_BOOTSTRAP_AR.md).
 
+### SaladCloud
+
+The repository includes a dedicated RTX 5090 image in `Dockerfile.salad`. It keeps the 65.84 GB model set outside the container image, downloads and verifies the pinned weights before reporting ready, protects the UI and WebSocket with application-level authentication, and can sync inputs, outputs and generation metadata to S3-compatible storage. See [the Salad deployment settings](deploy/SALAD_DEPLOYMENT.md). The standard H3 graphs and UI are unchanged.
+
 ## What has been verified
 
 On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. The interface's three modes map to their intended H3 nodes, and output files are checked before being shown as complete. New installs additionally require the upstream H3 VAE tile-blending fix before the UI permits generation. The [compatibility map](docs/COMPATIBILITY_MATRIX_AR.md) and [workflow map](docs/GRAPH_MAP.md) record the boundaries.
