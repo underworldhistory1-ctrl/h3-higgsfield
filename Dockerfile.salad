@@ -10,14 +10,17 @@ ENV COMFY_ROOT=/opt/ComfyUI \
     H3_DATA_ROOT=/workspace \
     HF_HOME=/workspace/.cache/huggingface \
     HF_XET_HIGH_PERFORMANCE=1 \
+    PATH=/opt/h3-venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       apache2-utils ca-certificates curl ffmpeg git nginx-light rclone tini \
+       apache2-utils ca-certificates curl ffmpeg git nginx-light python3-venv rclone tini \
        libgl1 libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m venv --system-site-packages /opt/h3-venv \
+    && /opt/h3-venv/bin/python -m pip install --no-cache-dir --upgrade pip
 
 RUN git init "${COMFY_ROOT}" \
     && git -C "${COMFY_ROOT}" remote add origin https://github.com/Comfy-Org/ComfyUI.git \
