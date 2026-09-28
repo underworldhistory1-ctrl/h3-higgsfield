@@ -46,6 +46,9 @@ RUN grep -q MiniMaxH3ReferenceToVideo "${COMFY_ROOT}/comfy_extras/nodes_minimax_
     && chmod 0755 /opt/h3-salad/entrypoint.sh \
     && useradd --uid 10001 --create-home --shell /bin/bash h3 \
     && mkdir -p /workspace /run/h3 /tmp/nginx/client /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi \
+    && touch /run/h3/htpasswd \
+    && nginx -t -c /opt/h3-salad/nginx.conf.template \
+    && rm /run/h3/htpasswd \
     && chown -R h3:h3 /workspace /run/h3 /tmp/nginx /opt/h3-salad "${COMFY_ROOT}"
 
 USER h3

@@ -28,6 +28,10 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           docker system prune -af || true
+      - name: Validate deployment files
+        run: |
+          bash -n deploy/salad/entrypoint.sh
+          python -m py_compile deploy/download_h3_models.py deploy/download_optional_loras.py deploy/make_h3_landing.py
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -47,4 +51,3 @@ jobs:
           sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
