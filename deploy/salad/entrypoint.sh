@@ -12,6 +12,7 @@ READY_FILE=/run/h3/ready.flag
 
 log() { printf '[h3-salad] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
+trap 'status=$?; printf "[h3-salad] Startup failed at line %s (exit %s).\n" "$LINENO" "$status" >&2; exit "$status"' ERR
 
 log "Initialising the Salad data disk at $DATA_ROOT."
 
@@ -34,6 +35,7 @@ chmod 600 /run/h3/htpasswd
 cp /opt/h3-salad/nginx.conf.template /run/h3/nginx.conf
 rm -f "$READY_FILE"
 
+nginx -t -c /run/h3/nginx.conf
 nginx -c /run/h3/nginx.conf -g 'daemon off;' &
 NGINX_PID=$!
 COMFY_PID=''
