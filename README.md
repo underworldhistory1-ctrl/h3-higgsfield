@@ -74,6 +74,24 @@ For a different Linux ComfyUI location, use `bash install.sh --comfy-root /path/
 
 Model downloads can require accepting the [MiniMax H3 license](https://huggingface.co/MiniMaxAI/MiniMax-H3) or Hugging Face access. The model weights, private reference files, personal video library, and server passwords are **not** in this Git repository; only the two public demo clips above are included. Re-running the installer checks and reuses valid cached weights. For a portable handoff or optional video-library restore, see [the server guide](deploy/CLOUD_BOOTSTRAP_AR.md).
 
+## Run on Comfy Cloud (macOS or any machine without an NVIDIA GPU)
+
+`cloud/bridge.py` serves the same H3 page locally and sends each render to [Comfy Cloud](https://cloud.comfy.org), which hosts the H3 weights and nodes. No local GPU or model download is needed. Finished MP4s are downloaded into `.cloud-data/output/video/`, which acts as the video library. A Comfy Cloud API key on a paid plan is required; renders draw from its credits.
+
+```bash
+uv venv cloud/.venv --python 3.13
+uv pip install --python cloud/.venv/bin/python -r cloud/requirements.txt
+COMFYUI_API_KEY=comfyui-… cloud/.venv/bin/python cloud/bridge.py   # or --env-file path/to/.env
+# long-running: H3_CLOUD_ENV_FILE=path/to/.env pm2 startOrRestart cloud/pm2.config.cjs --only h3-cloud-bridge
+```
+
+Open `http://127.0.0.1:8188/`. Limits in Cloud mode:
+
+- Comfy Cloud currently runs ComfyUI v0.37.4, which does **not** contain the September 22 H3 VAE tile-blending fix. The page therefore blocks generation until you start the bridge with `--accept-cloud-vae` (or `H3_ACCEPT_CLOUD_VAE=1` for PM2).
+- Spectrum and MotionCache are not hosted on Cloud and stay disabled. The Cloud H3 LoRAs appear as optional switches; the pinned Turbo file is not hosted, so the Turbo method stays disabled.
+- Reference files are uploaded to your Comfy Cloud account (50 MB per file). Deleting a clip in the page removes only the local copy.
+- Execution time and billed GPU seconds for each job are appended to `.cloud-data/output/video/.h3-cloud-usage.jsonl`.
+
 ## What has been verified
 
 On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. The interface's three modes map to their intended H3 nodes, and output files are checked before being shown as complete. New installs additionally require the upstream H3 VAE tile-blending fix before the UI permits generation. The [compatibility map](docs/COMPATIBILITY_MATRIX_AR.md) and [workflow map](docs/GRAPH_MAP.md) record the boundaries.

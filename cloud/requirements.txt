@@ -1,0 +1,4 @@
+aiohttp>=3.9
+av>=12
+pillow>=10
+pytest>=8
