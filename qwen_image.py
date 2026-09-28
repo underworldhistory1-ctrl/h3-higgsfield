@@ -228,3 +228,94 @@ class QwenStudioSaveImage:
 
 NODE_CLASS_MAPPINGS = {"QwenStudioSaveImage": QwenStudioSaveImage}
 NODE_DISPLAY_NAME_MAPPINGS = {"QwenStudioSaveImage": "Qwen Studio Save Image"}
+
+
+_OUTPUT_RE = re.compile(r"qwen_studio_[A-Za-z0-9_-]{1,64}_[0-9]{5}\.png")
+
+
+def safe_image_path(image_dir, filename):
+    if not isinstance(filename, str) or not _OUTPUT_RE.fullmatch(filename):
+        return None
+    root = Path(image_dir).resolve()
+    candidate = (root / filename).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
+
+
+def _load_sidecar(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def scan_image_library(image_dir):
+    from PIL import Image
+
+    root = Path(image_dir)
+    if not root.is_dir():
+        return []
+    items = []
+    for candidate in root.iterdir():
+        path = safe_image_path(root, candidate.name)
+        if path is None or not path.is_file():
+            continue
+        try:
+            with Image.open(path) as image:
+                image.verify()
+            with Image.open(path) as image:
+                width, height = image.size
+                mode = image.mode
+            stat = path.stat()
+        except (OSError, ValueError):
+            continue
+        settings = _load_sidecar(path.with_suffix(".json"))
+        items.append({
+            "filename": path.name, "subfolder": "images", "type": "output",
+            "bytes": stat.st_size, "modified": stat.st_mtime,
+            "width": width, "height": height, "has_alpha": "A" in mode,
+            "settings": settings,
+            "render_seconds": settings.get("render_seconds"),
+        })
+    items.sort(key=lambda item: item["modified"], reverse=True)
+    return items
+
+
+def update_image_details(image_dir, filename, details):
+    path = safe_image_path(image_dir, filename)
+    if path is None or not path.is_file() or not isinstance(details, dict):
+        return False
+    sidecar_path = path.with_suffix(".json")
+    metadata = _load_sidecar(sidecar_path)
+    render_seconds = details.get("render_seconds")
+    if isinstance(render_seconds, (int, float)) and not isinstance(render_seconds, bool) and 0 < render_seconds < 86400:
+        metadata["render_seconds"] = round(float(render_seconds), 2)
+    settings = details.get("settings")
+    if isinstance(settings, dict):
+        allowed = {"mode", "profile", "prompt", "width", "height", "steps", "seed",
+                   "transparent", "references", "reference_resolution"}
+        for key in allowed:
+            if key in settings:
+                metadata[key] = settings[key]
+    temporary = sidecar_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, sidecar_path)
+    return True
+
+
+def delete_image_output(image_dir, filename):
+    path = safe_image_path(image_dir, filename)
+    if path is None or not path.is_file():
+        return False
+    try:
+        path.unlink()
+        sidecar = path.with_suffix(".json")
+        if sidecar.is_file():
+            sidecar.unlink()
+        return True
+    except OSError:
+        return False

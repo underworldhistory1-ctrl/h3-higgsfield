@@ -28,10 +28,22 @@ from aiohttp import web
 import folder_paths
 from server import PromptServer
 from .h3_video_save import H3SaveVideo
+from .qwen_image import (
+    NODE_CLASS_MAPPINGS as QWEN_NODE_CLASS_MAPPINGS,
+    NODE_DISPLAY_NAME_MAPPINGS as QWEN_NODE_DISPLAY_NAME_MAPPINGS,
+    delete_image_output,
+    profile_status as qwen_profile_status,
+    required_qwen_nodes,
+    safe_image_path,
+    scan_image_library,
+    update_image_details,
+)
 
 
 NODE_CLASS_MAPPINGS = {"H3SaveVideo": H3SaveVideo}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3SaveVideo": "H3 Save Video"}
+NODE_CLASS_MAPPINGS.update(QWEN_NODE_CLASS_MAPPINGS)
+NODE_DISPLAY_NAME_MAPPINGS.update(QWEN_NODE_DISPLAY_NAME_MAPPINGS)
 WEB_DIRECTORY = "./web"
 
 PREFIX = "h3_studio"          # only files starting with this are ever touched
@@ -64,6 +76,10 @@ def _video_dir():
 
 def _thumbnail_dir():
     return os.path.join(_video_dir(), ".h3-thumbnails")
+
+
+def _image_dir():
+    return os.path.join(folder_paths.get_output_directory(), "images")
 
 
 def _video_metadata(path):
@@ -664,6 +680,63 @@ async def readiness(request):
         vae_tile_fix = False
     return web.json_response({"models": present, "nodes": available,
                               "quality": {"h3_vae_tile_fix": vae_tile_fix}})
+
+
+@PromptServer.instance.routes.get("/h3_studio/image_readiness")
+async def image_readiness(request):
+    """Report Qwen profiles independently; a partial profile is never selectable."""
+    try:
+        comfy_root = pathlib.Path(folder_paths.models_dir).resolve().parent
+    except (AttributeError, OSError):
+        comfy_root = pathlib.Path(folder_paths.__file__).resolve().parent
+    profiles = qwen_profile_status(comfy_root)
+    import nodes
+    available = {name: name in nodes.NODE_CLASS_MAPPINGS for name in required_qwen_nodes()}
+    return web.json_response({
+        "profiles": profiles,
+        "nodes": available,
+        "ready": any(item["ready"] for item in profiles.values()) and all(available.values()),
+    })
+
+
+@PromptServer.instance.routes.get("/h3_studio/image_library")
+async def image_library(request):
+    items = await asyncio.to_thread(scan_image_library, _image_dir())
+    return web.json_response({"items": items})
+
+
+@PromptServer.instance.routes.get("/h3_studio/image_file")
+async def image_file(request):
+    path = safe_image_path(_image_dir(), request.query.get("filename", ""))
+    if path is None or not path.is_file():
+        return web.Response(status=404)
+    return web.FileResponse(path, headers={"Cache-Control": "private, max-age=3600"})
+
+
+@PromptServer.instance.routes.post("/h3_studio/image_details")
+async def image_details(request):
+    try:
+        data = await request.json()
+    except (ValueError, TypeError):
+        return web.json_response({"error": "bad request"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "bad request"}, status=400)
+    ok = await asyncio.to_thread(
+        update_image_details, _image_dir(), data.get("filename"), data,
+    )
+    return web.json_response({"ok": ok}, status=200 if ok else 400)
+
+
+@PromptServer.instance.routes.post("/h3_studio/delete_image")
+async def delete_image(request):
+    try:
+        data = await request.json()
+    except (ValueError, TypeError):
+        return web.json_response({"error": "bad request"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "bad request"}, status=400)
+    ok = await asyncio.to_thread(delete_image_output, _image_dir(), data.get("filename"))
+    return web.json_response({"ok": ok}, status=200 if ok else 404)
 
 
 @PromptServer.instance.routes.post("/h3_studio/delete_saved")
