@@ -15,8 +15,9 @@ import webbrowser
 
 
 PROJECT = pathlib.Path(__file__).resolve().parent.parent
-COMFY_REVISION = "fc584aaa226560ccdfe70c2bcfe9424af1adeb04"
+COMFY_REVISION = "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251"
 H3_VAE_FIX_MARKER = "strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]"
+QWEN_NODE_MARKERS = ("TextEncodeQwenImage21", "QwenImage21Cache")
 SPEED_NODES = (
     ("ComfyUI-Spectrum-MiniMax-H3", "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3.git",
      "5161f0457bc8c52535212d6783eee73f439e1537"),
@@ -24,11 +25,12 @@ SPEED_NODES = (
      "bc2894102b2486661884371259a27080b0b137bf"),
 )
 RUNTIME_FILES = (
-    "__init__.py", "h3_video_save.py", "LICENSE", "README.md", "web/index.html", "web/studio.js",
+    "__init__.py", "h3_video_save.py", "qwen_image.py", "LICENSE", "README.md",
+    "web/index.html", "web/studio.js", "web/image.html", "web/image-studio.js",
     "workflows/h3_t2v_ui.json", "workflows/h3_t2v_api.json",
     "workflows/h3_t2v_smoke_ui.json", "workflows/h3_t2v_smoke_api.json",
     "scripts/verify_h3_video.py", "deploy/activate_h3.py",
-    "deploy/download_h3_models.py", "deploy/download_optional_loras.py",
+    "deploy/download_h3_models.py", "deploy/download_optional_loras.py", "deploy/download_qwen_image_models.py",
     "deploy/make_h3_landing.py", "deploy/verify_h3_server.py",
     "docs/COMPATIBILITY_MATRIX_AR.md", "docs/GRAPH_MAP.md", "docs/UX_FLOW.md",
 )
@@ -164,12 +166,14 @@ def prepare_comfy(root, git):
 def ensure_native_nodes(root, git):
     node_file = root / "comfy_extras" / "nodes_minimax_h3.py"
     vae_file = root / "comfy" / "ldm" / "minimax" / "vae.py"
+    qwen_file = root / "comfy_extras" / "nodes_qwen_image.py"
     native_ready = node_file.is_file() and "MiniMaxH3ReferenceToVideo" in node_file.read_text(encoding="utf-8")
     vae_ready = vae_file.is_file() and H3_VAE_FIX_MARKER in vae_file.read_text(encoding="utf-8")
-    if native_ready and vae_ready:
+    qwen_ready = qwen_file.is_file() and all(marker in qwen_file.read_text(encoding="utf-8") for marker in QWEN_NODE_MARKERS)
+    if native_ready and vae_ready and qwen_ready:
         return
     if not (root / ".git").is_dir():
-        raise RuntimeError("This ComfyUI Portable build lacks native H3 nodes or the September 22 H3 VAE tile fix. Run its official update\\update_comfyui.bat, then rerun. Existing files were not changed.")
+        raise RuntimeError("This ComfyUI Portable build lacks the verified H3 VAE fix or Qwen Image 2.1 nodes. Run its official update\\update_comfyui.bat, then rerun. Existing files were not changed.")
     if call(git, "-C", root, "status", "--porcelain", "--untracked-files=no", capture=True):
         raise RuntimeError("ComfyUI has local source edits; update it manually before installing H3.")
     call(git, "-C", root, "fetch", "--depth", "1", "origin", COMFY_REVISION)
@@ -180,6 +184,8 @@ def ensure_native_nodes(root, git):
         raise RuntimeError("Pinned ComfyUI checkout still lacks the H3 reference node")
     if not vae_file.is_file() or H3_VAE_FIX_MARKER not in vae_file.read_text(encoding="utf-8"):
         raise RuntimeError("Pinned ComfyUI checkout still lacks the H3 VAE tile fix")
+    if not qwen_file.is_file() or not all(marker in qwen_file.read_text(encoding="utf-8") for marker in QWEN_NODE_MARKERS):
+        raise RuntimeError("Pinned ComfyUI checkout still lacks Qwen Image 2.1 nodes")
 
 
 def select_python(root, override, fresh):
@@ -341,6 +347,7 @@ def main():
     parser.add_argument("--port", type=int, default=8188)
     parser.add_argument("--bind", choices=("127.0.0.1", "0.0.0.0"), default="127.0.0.1")
     parser.add_argument("--no-start", action="store_true")
+    parser.add_argument("--qwen-image-profiles", default="", choices=("", "int8", "bf16", "int8,bf16"))
     parser.add_argument("--preflight", action="store_true", help="Read-only local check; never downloads or changes files")
     args = parser.parse_args()
     if not sys.platform.startswith("win"):
@@ -379,6 +386,9 @@ def main():
         call(python, "-m", "pip", "install", "huggingface_hub==1.32.0")
     call(python, PROJECT / "deploy" / "download_h3_models.py", root)
     call(python, PROJECT / "deploy" / "download_optional_loras.py", root)
+    if args.qwen_image_profiles:
+        call(python, PROJECT / "deploy" / "download_qwen_image_models.py", root,
+             "--profiles", args.qwen_image_profiles)
     install_workflows(root)
     page = url + "/extensions/h3_studio/index.html"
     if args.no_start:

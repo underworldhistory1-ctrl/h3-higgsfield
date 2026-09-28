@@ -40,13 +40,13 @@ COMFY_ROOT="$(cd "$COMFY_ROOT" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNTIME_FILES=(
-    __init__.py h3_video_save.py LICENSE README.md
-    web/index.html web/studio.js
+    __init__.py h3_video_save.py qwen_image.py LICENSE README.md
+    web/index.html web/studio.js web/image.html web/image-studio.js
     workflows/h3_t2v_ui.json workflows/h3_t2v_api.json
     workflows/h3_t2v_smoke_ui.json workflows/h3_t2v_smoke_api.json
     scripts/verify_h3_video.py
     deploy/activate_h3.py deploy/bootstrap_h3_server.sh
-    deploy/download_h3_models.sh deploy/download_optional_loras.py
+    deploy/download_h3_models.sh deploy/download_optional_loras.py deploy/download_qwen_image_models.py
     deploy/make_h3_landing.py deploy/verify_h3_server.py
     docs/COMPATIBILITY_MATRIX_AR.md docs/GRAPH_MAP.md docs/UX_FLOW.md
 )

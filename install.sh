@@ -7,8 +7,9 @@ COMFY_ROOT=""
 PORT=8188
 BIND=127.0.0.1
 AUTO_START=1
-COMFY_REVISION="fc584aaa226560ccdfe70c2bcfe9424af1adeb04"
+COMFY_REVISION="3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251"
 H3_VAE_FIX_MARKER='strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]'
+QWEN_NODE_FILE_REL='comfy_extras/nodes_qwen_image.py'
 
 usage() {
     cat <<'EOF'
@@ -99,8 +100,11 @@ fi
 
 H3_NODE_FILE="$COMFY_ROOT/comfy_extras/nodes_minimax_h3.py"
 H3_VAE_FILE="$COMFY_ROOT/comfy/ldm/minimax/vae.py"
+QWEN_NODE_FILE="$COMFY_ROOT/$QWEN_NODE_FILE_REL"
 if [[ ! -f "$H3_NODE_FILE" ]] || ! grep -q MiniMaxH3ReferenceToVideo "$H3_NODE_FILE" \
-        || [[ ! -f "$H3_VAE_FILE" ]] || ! grep -Fq "$H3_VAE_FIX_MARKER" "$H3_VAE_FILE"; then
+        || [[ ! -f "$H3_VAE_FILE" ]] || ! grep -Fq "$H3_VAE_FIX_MARKER" "$H3_VAE_FILE" \
+        || [[ ! -f "$QWEN_NODE_FILE" ]] || ! grep -q TextEncodeQwenImage21 "$QWEN_NODE_FILE" \
+        || ! grep -q QwenImage21Cache "$QWEN_NODE_FILE"; then
     if [[ ! -d "$COMFY_ROOT/.git" ]] || [[ -n "$(git -C "$COMFY_ROOT" status --porcelain --untracked-files=no)" ]]; then
         echo "ComfyUI lacks the native H3 nodes or the September 22 H3 VAE tile fix, and has no clean Git checkout to update safely." >&2
         exit 1
@@ -113,6 +117,8 @@ if [[ ! -f "$H3_NODE_FILE" ]] || ! grep -q MiniMaxH3ReferenceToVideo "$H3_NODE_F
 fi
 grep -q MiniMaxH3ReferenceToVideo "$H3_NODE_FILE" || { echo "Pinned ComfyUI lacks the H3 reference node." >&2; exit 1; }
 grep -Fq "$H3_VAE_FIX_MARKER" "$H3_VAE_FILE" || { echo "Pinned ComfyUI lacks the H3 VAE tile fix." >&2; exit 1; }
+grep -q TextEncodeQwenImage21 "$QWEN_NODE_FILE" || { echo "Pinned ComfyUI lacks Qwen Image 2.1 text encoding." >&2; exit 1; }
+grep -q QwenImage21Cache "$QWEN_NODE_FILE" || { echo "Pinned ComfyUI lacks Qwen Image 2.1 edit caching." >&2; exit 1; }
 
 if [[ -n "${COMFY_PYTHON:-}" && -x "${COMFY_PYTHON}" ]]; then
     H3_PYTHON="$COMFY_PYTHON"
@@ -155,6 +161,9 @@ if ((free_gib < 100)); then
 fi
 
 bash "$ROOT/deploy/bootstrap_h3_server.sh" "$COMFY_ROOT"
+if [[ -n "${QWEN_IMAGE_PROFILES:-}" ]]; then
+    "$H3_PYTHON" "$ROOT/deploy/download_qwen_image_models.py" "$COMFY_ROOT" --profiles "$QWEN_IMAGE_PROFILES"
+fi
 if ((AUTO_START == 0)); then
     echo "Files installed. Start/restart ComfyUI before opening /extensions/h3_studio/index.html."
     exit 0

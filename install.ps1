@@ -5,7 +5,8 @@ param(
     [ValidateRange(1, 65535)][int]$Port = 8188,
     [ValidateSet("127.0.0.1", "0.0.0.0")][string]$Bind = "127.0.0.1",
     [switch]$Preflight,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [ValidateSet("", "int8", "bf16", "int8,bf16")][string]$QwenImageProfiles = ""
 )
 $ErrorActionPreference = "Stop"
 $project = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -52,5 +53,6 @@ if ($ComfyRoot) { $arguments += @("--comfy-root", $ComfyRoot) }
 if ($ComfyPython) { $arguments += @("--comfy-python", $ComfyPython) }
 if ($Preflight) { $arguments += "--preflight" }
 if ($NoStart) { $arguments += "--no-start" }
+if ($QwenImageProfiles) { $arguments += @("--qwen-image-profiles", $QwenImageProfiles) }
 & $hostPython @prefix @arguments
 exit $LASTEXITCODE
