@@ -61,7 +61,7 @@ MODEL_PROFILES = {
 REQUIRED_QWEN_NODES = (
     "UNETLoader", "CLIPLoader", "VAELoader", "TextEncodeQwenImage21",
     "QwenImage21Cache", "EmptyLatentImage", "KSampler", "VAEDecode",
-    "QwenStudioSaveImage",
+    "ImageScale", "QwenStudioSaveImage",
 )
 
 
@@ -141,6 +141,7 @@ def build_qwen_graph(request, uploads, token):
         "kind": "image", "mode": mode, "profile": profile_key, "prompt": prompt,
         "width": width, "height": height, "steps": steps, "seed": seed,
         "transparent": bool(mode == "create" and request.get("transparent")),
+        "custom_size": bool(mode == "edit" and request.get("custom_size")),
         "references": [os.path.basename(str(name)) for name in uploads],
         "submitted_at": time.time(), "token": safe_token,
     }
@@ -166,7 +167,14 @@ def build_qwen_graph(request, uploads, token):
         for index, filename in enumerate(uploads, 1):
             node_id = f"load{index}"
             graph[node_id] = {"class_type": "LoadImage", "inputs": {"image": filename}}
-            graph["enc"]["inputs"][f"images.image_{index}"] = [node_id, 0]
+            image_link = [node_id, 0]
+            if index == 1 and request.get("custom_size"):
+                graph["scale_primary"] = {"class_type": "ImageScale", "inputs": {
+                    "image": image_link, "upscale_method": "lanczos", "width": width,
+                    "height": height, "crop": "center",
+                }}
+                image_link = ["scale_primary", 0]
+            graph["enc"]["inputs"][f"images.image_{index}"] = image_link
         graph["cache"] = {"class_type": "QwenImage21Cache", "inputs": {
             "model": ["unet", 0], "device": "auto", "dtype": "default",
         }}

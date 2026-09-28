@@ -46,6 +46,19 @@ class QwenImageContractTests(unittest.TestCase):
         self.assertEqual(graph["enc"]["inputs"]["images.image_2"], ["load2", 0])
         self.assertEqual(graph["unet"]["inputs"]["unet_name"], "qwen_image_2.1_bf16.safetensors")
 
+    def test_edit_graph_can_resize_only_the_primary_canvas(self):
+        qwen = self.module()
+        graph = qwen.build_qwen_graph(
+            {"mode": "edit", "profile": "int8", "prompt": "Relight <image1>",
+             "width": 1696, "height": 960, "steps": 25, "seed": 9,
+             "reference_resolution": 0, "custom_size": True},
+            ["canvas.png", "look.png"], "edit456",
+        )
+        self.assertEqual(graph["scale_primary"]["class_type"], "ImageScale")
+        self.assertEqual(graph["scale_primary"]["inputs"]["width"], 1696)
+        self.assertEqual(graph["enc"]["inputs"]["images.image_1"], ["scale_primary", 0])
+        self.assertEqual(graph["enc"]["inputs"]["images.image_2"], ["load2", 0])
+
     def test_validation_rejects_bad_or_unsafe_requests(self):
         qwen = self.module()
         base = {"mode": "create", "profile": "int8", "prompt": "x", "width": 1024,
