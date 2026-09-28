@@ -11,13 +11,15 @@ import zipfile
 
 SOURCE_FILES = (
     "AGENTS.md", "START_HERE_AR.md", "LICENSE", "README.md", "install.sh", "install.ps1", "__init__.py", "h3_video_save.py",
+    "Dockerfile.salad", ".dockerignore",
     "web/index.html", "web/studio.js",
     "deploy/bootstrap_h3_server.sh", "deploy/download_h3_models.sh",
     "deploy/download_h3_models.py", "deploy/install_windows.py",
     "deploy/download_optional_loras.py", "deploy/make_h3_landing.py",
     "deploy/provision_h3.py", "deploy/activate_h3.py", "deploy/verify_h3_server.py",
     "deploy/backup_h3_library.py", "deploy/restore_h3_library.py",
-    "deploy/build_final_folder.py", "deploy/CLOUD_BOOTSTRAP_AR.md",
+    "deploy/build_final_folder.py", "deploy/CLOUD_BOOTSTRAP_AR.md", "deploy/SALAD_DEPLOYMENT.md",
+    "deploy/salad/entrypoint.sh", "deploy/salad/nginx.conf.template",
     "scripts/verify_h3_video.py", "docs/UX_FLOW.md", "docs/GRAPH_MAP.md",
     "docs/FINAL_AUDIT_AR.md", "docs/COMPATIBILITY_MATRIX_AR.md", "docs/social-preview.png",
     "docs/demo/interface-references.png", "docs/demo/interface-motioncache.png",

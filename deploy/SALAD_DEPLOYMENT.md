@@ -5,6 +5,11 @@ FFmpeg, Spectrum and MotionCache. It deliberately contains no model weights.
 The complete H3 model set is 65.84 GB and would exceed Salad's 35 GB compressed
 container-image limit.
 
+The published `linux/amd64` image built from commit `13b3582` is **5.304 GB
+compressed** (14 layers), digest
+`sha256:8d21b984a6ae97942a525c85a093eb28908765fbd8f00eb249d1bdc0258d787f`.
+The GHCR package is public, so Salad does not need registry credentials.
+
 ## Container Group
 
 - Image: `ghcr.io/underworldhistory1-ctrl/minimax-h3-higgsfield:salad`
