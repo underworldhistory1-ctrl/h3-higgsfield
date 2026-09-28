@@ -1,6 +1,6 @@
-# H3 Higgsfield — MiniMax H3 video studio
+# H3 Higgsfield — MiniMax H3 video + Qwen Image studio
 
-An independent, creator-friendly interface for **MiniMax H3 video with native audio**. ComfyUI runs behind the page; creators work with scenes, references, settings, a queue, and a video library instead of a node canvas. This project is not affiliated with Higgsfield.
+An independent, creator-friendly interface for **MiniMax H3 video with native audio** and **Qwen Image 2.1 creation/editing**. ComfyUI runs behind the pages; creators never need the node canvas. This project is not affiliated with Higgsfield.
 
 ![H3 Higgsfield reference-mode interface with a generated video](docs/demo/interface-references.png)
 
@@ -26,6 +26,8 @@ The published MP4s retain their video and audio streams; private prompt metadata
 
 ## What you get
 
+The top navigation separates **Video** and **Image**. Video retains the complete H3 workflow below. Image provides a separate Create/Edit workspace, 1–10 photo inputs, INT8/BF16 availability checks, native aspect presets up to 4 MP, transparency, queue/progress recovery, output details, download, and deletion.
+
 | Mode | Input | H3 path |
 | --- | --- | --- |
 | Text | Scene prompt | FL2VA |
@@ -42,7 +44,7 @@ The published MP4s retain their video and audio streams; private prompt metadata
 
 ## Install on Windows or Linux
 
-Both installers require an NVIDIA GPU with a working driver and room for roughly **63.4 GB of H3 weights** plus dependencies and outputs; 100 GB free is recommended for a first setup. An empty disk cannot be ready in seconds because the models must download.
+Both installers require an NVIDIA GPU with a working driver. H3 needs roughly **65.8 GB** including the prepared speed/LoRA files. Qwen Image is optional outside Salad: INT8 adds **17.3 GB**; BF16 adds **32.4 GB**, with a shared VAE. Use `QWEN_IMAGE_PROFILES=int8` (Linux) or `-QwenImageProfiles int8` (Windows) to install it. An empty disk cannot be ready in seconds because the models must download.
 
 ### Windows (native PowerShell; no WSL)
 
@@ -68,7 +70,7 @@ cd minimax-h3-higgsfield
 bash install.sh
 ```
 
-The Linux installer finds an existing ComfyUI or installs the pinned H3-capable revision containing the September 22 H3 VAE tile-blending fix, checks missing tools and Python packages, reuses or downloads verified model files, prepares the optional nodes and LoRAs, and opens **H3 Higgsfield** as the ComfyUI landing page. Both installers check the queue before restarting an existing server. If the provider's login or process manager blocks an automatic restart, the installer stops with a clear restart instruction rather than claiming the app is ready.
+The Linux installer finds an existing ComfyUI or installs pinned revision `3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251`. That revision contains the corrected H3 VAE tile decode and native Qwen Image 2.1 nodes. The installer checks those source markers before continuing, reuses or downloads verified model files, prepares the optional nodes and LoRAs, and opens **H3 Higgsfield** as the ComfyUI landing page.
 
 For a different Linux ComfyUI location, use `bash install.sh --comfy-root /path/to/ComfyUI`. Both new installs bind to `127.0.0.1:8188` by default. Reach a remote server through an SSH tunnel or an authenticated cloud proxy; only use `--bind 0.0.0.0` (Linux) or `-Bind 0.0.0.0` (Windows) behind access control. Once ready, open `/extensions/h3_studio/index.html` at your server address. The server root also redirects to this page; the Comfy node editor is reserved for maintenance at `/?view=nodes`.
 
@@ -76,11 +78,13 @@ Model downloads can require accepting the [MiniMax H3 license](https://huggingfa
 
 ### SaladCloud
 
-The repository includes a dedicated RTX 5090 image in `Dockerfile.salad`. It keeps the 65.84 GB model set outside the container image, downloads and verifies the pinned weights before reporting ready, protects the UI and WebSocket with application-level authentication, and can sync inputs, outputs and generation metadata to S3-compatible storage. See [the Salad deployment settings](deploy/SALAD_DEPLOYMENT.md). The standard H3 graphs and UI are unchanged.
+The repository includes a dedicated RTX 5090 image in `Dockerfile.salad`. It keeps all weights outside the container image, defaults to H3 plus Qwen INT8, verifies exact pinned sizes and SHA-256 values before reporting ready, protects both workspaces and WebSocket with one login, and can sync outputs to S3-compatible storage. See [the Salad deployment settings](deploy/SALAD_DEPLOYMENT.md).
 
 ## What has been verified
 
-On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. The interface's three modes map to their intended H3 nodes, and output files are checked before being shown as complete. New installs additionally require the upstream H3 VAE tile-blending fix before the UI permits generation. The [compatibility map](docs/COMPATIBILITY_MATRIX_AR.md) and [workflow map](docs/GRAPH_MAP.md) record the boundaries.
+On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. New installs require the upstream H3 VAE tile fix before the UI permits generation. Qwen's graphs match the pinned ComfyUI 2.1 schemas and the source project's graph contract; its real RTX 5090 render remains the first live check after allocating the new server.
+
+Qwen Image 2.1 weights use the Qwen Research License and are not licensed for commercial use. They are downloaded at runtime and are not redistributed by this repository.
 
 DLSS 5 Visual Enhancer is an optional Windows post-processing path and is not installed on Linux cloud servers. The studio first preserves source quality through the corrected H3 VAE, INT8 ConvRot weights, and high-quality MP4 saving; enhancement can be applied later on a compatible Windows RTX machine.
 

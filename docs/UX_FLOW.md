@@ -51,4 +51,10 @@ The initial ETA is a broad estimate. A job stores its settings on the server whe
 
 Cloud GPU rendering, media decoding, and LoRA compatibility require a real connected server for final validation. The local page can verify visual interactions and emitted ComfyUI graph JSON only.
 
+## Image workspace
+
+`image.html` is a separate Create/Edit tool with the same navigation and authenticated ComfyUI origin. Create exposes prompt, profile, size, seed, steps and optional native transparency. Edit accepts a primary canvas plus up to nine additional references, previews and reorders them by insertion order, and can preserve or explicitly replace the primary size. Uninstalled profiles remain visible but disabled with the missing-file reason.
+
+Upload progress precedes the Comfy queue. Sampling progress and ETA use WebSocket step events; refresh restores the active prompt ID and polls queue/history. Completed PNGs appear in the current preview and a paged server library with settings, measured time, download and delete. Failed, interrupted, or missing server outputs never appear as completed images.
+
 The interface supports one submitted render at a time. Its queue display counts all ComfyUI jobs and shows this job's position. After it finishes or is cancelled, a new render can be sent. History cards include server file time and measured render time when recorded. Settings metadata and measured samples for new clips survive a ComfyUI restart while the output disk persists.

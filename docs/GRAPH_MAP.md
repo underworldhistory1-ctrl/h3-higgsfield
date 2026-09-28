@@ -32,3 +32,11 @@ The Original method uses 20 steps by default with `res_multistep`, `simple`, CFG
 - Spectrum **or** MotionCache occupies ID 61 after Sigma Shift and before KSampler. They are exclusive. Both are experimental approximations; neither is part of Original quality.
 
 The extension's `/h3_studio/readiness` route checks model sizes and registered node names. The frontend checks mode-specific nodes and installed LoRA file names before `/prompt`. The readiness result does not prove output quality or audio sync. Keep the `web/` implementation and backend API together when deploying; copying only workflows is insufficient.
+
+## Qwen Image 2.1 graphs
+
+The Image workspace is separate from all H3 video branches. Both Create and Edit load the selected Qwen diffusion model, Qwen VL encoder and Qwen 2.1 VAE, then use `TextEncodeQwenImage21`, `KSampler` (Euler/simple, CFG 1), `VAEDecode` and `QwenStudioSaveImage`.
+
+- **Create:** `EmptyLatentImage` supplies the selected 1/1.6/4 MP canvas. Transparency adds Qwen's documented RGBA instruction.
+- **Edit:** `LoadImage` supplies 1–10 ordered photos through `images.image_N`; the first photo defines the canvas unless the user explicitly resizes it. `QwenImage21Cache` is enabled and the encoder's latent output feeds the sampler.
+- **Profiles:** INT8 and BF16 are selectable only when every exact file in that profile has the expected size. Salad defaults to INT8.

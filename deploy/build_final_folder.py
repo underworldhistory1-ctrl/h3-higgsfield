@@ -10,11 +10,11 @@ import zipfile
 
 
 SOURCE_FILES = (
-    "AGENTS.md", "START_HERE_AR.md", "LICENSE", "README.md", "install.sh", "install.ps1", "__init__.py", "h3_video_save.py",
+    "AGENTS.md", "START_HERE_AR.md", "LICENSE", "README.md", "install.sh", "install.ps1", "__init__.py", "h3_video_save.py", "qwen_image.py",
     "Dockerfile.salad", ".dockerignore",
-    "web/index.html", "web/studio.js",
+    "web/index.html", "web/studio.js", "web/image.html", "web/image-studio.js",
     "deploy/bootstrap_h3_server.sh", "deploy/download_h3_models.sh",
-    "deploy/download_h3_models.py", "deploy/install_windows.py",
+    "deploy/download_h3_models.py", "deploy/download_qwen_image_models.py", "deploy/install_windows.py",
     "deploy/download_optional_loras.py", "deploy/make_h3_landing.py",
     "deploy/provision_h3.py", "deploy/activate_h3.py", "deploy/verify_h3_server.py",
     "deploy/backup_h3_library.py", "deploy/restore_h3_library.py",
@@ -27,6 +27,8 @@ SOURCE_FILES = (
     "docs/demo/spectrum-no-lora.mp4", "docs/demo/motioncache-no-lora.mp4",
     "workflows/h3_t2v_ui.json", "workflows/h3_t2v_api.json",
     "workflows/h3_t2v_smoke_ui.json", "workflows/h3_t2v_smoke_api.json",
+    "tests/__init__.py", "tests/test_deployment_contract.py", "tests/test_image_ui_contract.py",
+    "tests/test_qwen_downloader.py", "tests/test_qwen_image.py", "tests/test_qwen_routes.py",
 )
 
 
@@ -105,8 +107,10 @@ def main():
         "project": "H3 Studio", "release": "2026-09-25-final",
         "tested_gpu": "NVIDIA GeForce RTX 5090, 32 GB",
         "tested_comfy_revision": "73c9bad4d21e7addbe1d13bc92eee0f1431b017d",
-        "prepared_comfy_revision": "fc584aaa226560ccdfe70c2bcfe9424af1adeb04",
+        "prepared_comfy_revision": "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251",
         "h3_vae_tile_fix_pr": 16436,
+        "qwen_image_profiles": ["int8", "bf16"],
+        "qwen_model_revision": "9a44dbdb47cefd046be9c0a13476192f34c8db8e",
         "spectrum_revision": "5161f0457bc8c52535212d6783eee73f439e1537",
         "motioncache_revision": "bc2894102b2486661884371259a27080b0b137bf",
         "contains_model_weights": False,
