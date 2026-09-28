@@ -53,7 +53,10 @@ RUN grep -q MiniMaxH3ReferenceToVideo "${COMFY_ROOT}/comfy_extras/nodes_minimax_
     && rm /run/h3/htpasswd \
     && chown -R h3:h3 /workspace /run/h3 /tmp/nginx /opt/h3-salad "${COMFY_ROOT}"
 
-USER h3
+# Salad mounts the ephemeral data disk at runtime.  The mount can be owned by
+# root even though /workspace was chowned while the image was built, so the
+# entrypoint must be able to initialise that fresh mount before ComfyUI starts.
+USER root
 WORKDIR "${COMFY_ROOT}"
 EXPOSE 8000
 

@@ -13,6 +13,8 @@ READY_FILE=/run/h3/ready.flag
 log() { printf '[h3-salad] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
+log "Initialising the Salad data disk at $DATA_ROOT."
+
 [[ -n "${H3_UI_PASSWORD:-}" ]] || die "Set H3_UI_PASSWORD as a Salad secret environment variable."
 [[ "$SYNC_SECONDS" =~ ^[0-9]+$ ]] && ((SYNC_SECONDS >= 10)) || die "H3_SYNC_SECONDS must be an integer of at least 10."
 [[ "$MODEL_SOURCE" == "huggingface" || "$MODEL_SOURCE" == "remote" ]] \
