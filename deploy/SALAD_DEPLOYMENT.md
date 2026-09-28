@@ -6,9 +6,10 @@ The default runtime downloads the 65.84 GB prepared H3 set and the 17.28 GB
 Qwen Image INT8 set onto the assigned machine. This keeps the image below
 Salad's 35 GB compressed-image limit.
 
-The final published image digest and measured compressed size are recorded here
-after the release workflow completes. The GHCR package is public, so Salad does
-not need registry credentials.
+The published `linux/amd64` image built from commit `9d81246` is **5.307 GB
+compressed** (14 layers), digest
+`sha256:d39913847efeef05f6a4c8da91a37d69f6d309bf57610b2fbf9cbc0d6b0004b0`.
+The GHCR package is public, so Salad does not need registry credentials.
 
 ## Container Group
 
