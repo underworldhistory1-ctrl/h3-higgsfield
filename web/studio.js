@@ -140,11 +140,14 @@ function selectMode(mode) {
   $("framesSection").hidden = mode !== "frames";
   $("refsSection").hidden = mode !== "refs";
   $("promptTip").textContent = mode === "refs"
-    ? "Type @ and select a named asset. Mention it in the scene to bind the reference."
-    : "Sent directly to H3. Describe both the motion and the sound.";
+    ? "Type @ and select a named asset. Its thumbnail and H3 reference number appear below the prompt."
+    : mode === "frames"
+      ? "Use @start and @end to refer to uploaded frames. Their thumbnails and H3 picture numbers appear below."
+      : "Sent directly to H3. Describe both the motion and the sound.";
   updateMethodAvailability();
   renderEstimates();
   renderLoras();
+  renderPromptAssets();
   info(disabledLoras.length?"Disabled incompatible LoRA(s) for this mode: "+disabledLoras.map(item=>item.name).join(", "):"");
   saveDraft();
   if(state.modelsReady)checkConnection();
@@ -365,12 +368,12 @@ function frameBox(which) {
     box.replaceChildren();
     const img=document.createElement("img"); img.src=state[which].url; img.alt=which+" frame"; box.append(img);
     clear.classList.remove("hidden");
-    renderEstimates();saveDraft();
+    renderEstimates();renderPromptAssets();saveDraft();
   };
   clear.onclick = () => {
     if (state[which]?.url) URL.revokeObjectURL(state[which].url);
     state[which]=null; file.value="";box.textContent=which==="first"?"+ Add start frame":"+ Add end frame";
-    clear.classList.add("hidden");renderEstimates();saveDraft();
+    clear.classList.add("hidden");renderEstimates();renderPromptAssets();saveDraft();
   };
 }
 frameBox("first");frameBox("last");
@@ -473,6 +476,7 @@ function renderRefs() {
     $("refs").append(card);
   });
   updateRefDurationNotice();
+  renderPromptAssets();
 }
 $("addRef").onclick=()=>{
   if(state.busy)return;
@@ -499,23 +503,62 @@ $("refFile").onchange=()=>{
   $("refFile").value="";renderRefs();renderEstimates();info("");saveDraft();
 };
 
+function mentionItems(){
+  if(state.mode==="frames"){
+    const items=[];
+    if(state.first)items.push({alias:"start",kind:"image",previewUrl:state.first.url,tag:"Picture 1",label:"Start frame"});
+    if(state.last)items.push({alias:"end",kind:"image",previewUrl:state.last.url,tag:"Picture "+(state.first?2:1),label:"End frame"});
+    return items;
+  }
+  if(state.mode!=="refs")return [];
+  let image=0,video=0,audio=0;
+  return orderedRefs().map(ref=>({alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,
+    tag:ref.kind==="image"?"Subject "+(++image)+" · Picture "+image:ref.kind==="video"?"Video "+(++video):"Audio "+(++audio),
+    label:ref.kind==="image"?"Image":ref.kind==="video"?"Video":"Audio"}));
+}
+function renderPromptAssets(){
+  const wrap=$("promptAssets");wrap.replaceChildren();
+  const prompt=$("prompt").value;
+  const items=mentionItems().filter(item=>state.mode==="frames"||new RegExp("@"+item.alias+"(?=$|[^\\p{L}\\p{N}_-])","u").test(prompt));
+  for(const item of items){
+    const chip=document.createElement("button");chip.type="button";chip.className="prompt-asset";
+    chip.disabled=state.busy;
+    chip.title="Insert @"+item.alias+" into the prompt";
+    chip.onclick=()=>{
+      const input=$("prompt"),at=input.selectionStart;
+      input.setRangeText("@"+item.alias+" ",at,input.selectionEnd,"end");
+      input.focus();renderPromptAssets();saveDraft();
+    };
+    if(item.previewUrl&&item.kind!=="audio"){
+      const img=document.createElement("img");img.src=item.previewUrl;img.alt=item.label+" preview";chip.append(img);
+    }
+    const name=document.createElement("span");name.textContent="@"+item.alias;
+    const tag=document.createElement("small");tag.textContent=item.tag;
+    chip.append(name,tag);wrap.append(chip);
+  }
+}
 function mentionState() {
   const input=$("prompt"),before=input.value.slice(0,input.selectionStart);
   const match=before.match(/@([\p{L}\p{N}_-]*)$/u);
-  if(state.mode!=="refs"||!match||!state.refs.length){$("mentionMenu").classList.add("hidden");return;}
-  const names=state.refs.filter(r=>r.alias.toLocaleLowerCase().startsWith(match[1].toLocaleLowerCase()));
+  if(!match){$("mentionMenu").classList.add("hidden");renderPromptAssets();return;}
+  const names=mentionItems().filter(item=>item.alias.toLocaleLowerCase().startsWith(match[1].toLocaleLowerCase()));
   const menu=$("mentionMenu");menu.replaceChildren();
-  names.forEach(ref=>{
-    const b=document.createElement("button");b.type="button";b.textContent="@"+ref.alias+" · "+({image:"Image",video:"Video",audio:"Audio"}[ref.kind]);
+  names.forEach(item=>{
+    const b=document.createElement("button");b.type="button";
+    if(item.previewUrl&&item.kind!=="audio"){
+      const img=document.createElement("img");img.src=item.previewUrl;img.alt="";b.append(img);
+    }
+    const label=document.createElement("span");label.textContent="@"+item.alias+" · "+item.tag;b.append(label);
     b.onmousedown=e=>{
       e.preventDefault();
       const start=input.selectionStart-match[0].length,end=input.selectionStart;
-      input.setRangeText("@"+ref.alias+" ",start,end,"end");
-      menu.classList.add("hidden");input.focus();
+      input.setRangeText("@"+item.alias+" ",start,end,"end");
+      menu.classList.add("hidden");input.focus();renderPromptAssets();saveDraft();
     };
     menu.append(b);
   });
   menu.classList.toggle("hidden",!names.length);
+  renderPromptAssets();
 }
 $("prompt").addEventListener("input",mentionState);
 $("prompt").addEventListener("click",mentionState);
@@ -524,6 +567,15 @@ $("prompt").addEventListener("blur",()=>setTimeout(()=>$("mentionMenu").classLis
 function resolvedPrompt() {
   let prompt=$("prompt").value.trim();
   if(!prompt) throw Error("Write the scene prompt first.");
+  if(state.mode==="frames"){
+    const frameTags=new Map();
+    if(state.first)frameTags.set("start","<Picture 1>");
+    if(state.last)frameTags.set("end","<Picture "+(state.first?2:1)+">");
+    prompt=prompt.replace(/@([\p{L}\p{N}_-]+)/gu,(whole,name)=>{
+      if(!frameTags.has(name))throw Error("Frame mention "+whole+" has no matching uploaded frame.");
+      return frameTags.get(name);
+    });
+  }
   if(state.mode!=="refs"){
     const alreadyStructured=/^integrated_multimodal_description:/i.test(prompt);
     if(!alreadyStructured){

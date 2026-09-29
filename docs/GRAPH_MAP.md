@@ -25,6 +25,8 @@ The Original method uses 20 steps by default with `res_multistep`, `simple`, CFG
 - **Frames:** Node 6 is FL2VA. Node 13 (`LoadImage`) connects `first_frame` when selected; node 14 connects `last_frame` when selected. One or both frames are required.
 - **References:** Node 6 is Ref2VA. Uploaded images connect through `LoadImage` to `ref_images.ref_image_N`; videos through `LoadVideo` and `GetVideoComponents` to `ref_videos.ref_video_N`; optional matching video audio goes to `ref_video_audios.ref_video_audio_N` with the **same video index**; audio files connect through `LoadAudio` to `ref_audios.ref_audio_N`. IDs start at 20 and grow as needed. The UI orders references by image, video, audio and rewrites their `@name` mentions to H3 tags before submitting.
 
+The prompt shows thumbnail chips for attached frames and mentioned image/video references. These chips are a visual representation of the actual uploaded files, not separate conditioning inputs. In Frames mode `@start` and `@end` compile to the corresponding `<Picture 1>`/`<Picture 2>` tokens, matching the node 6 first/last frame inputs. In References mode `@sara` and other named mentions compile to the numbered `<Subject N>`, `<Video N>` or `<Audio N>` tokens while the actual files remain connected to node 6. The picture numbers shown next to image chips match the image input order; a `<Subject N>` definition points to its `<Picture N>`.
+
 ## Optional model path
 
 - User-selected style LoRAs chain through `LoraLoaderModelOnly` starting at ID 50, in displayed order and selected strength, before Sigma Shift.
