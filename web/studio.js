@@ -112,7 +112,8 @@ function renderMethodInfo(){
   $("steps").min=value==="turbo"?"4":"20";
   $("steps").max=value==="turbo"?"8":"100";
   $("stepPresets").hidden=value==="turbo";
-  $("stepAdvice").textContent=value==="turbo"?"Turbo adapter: 4–8 steps; 6 is the comparison setting. This changes the generated video and sound. No higher step count makes it equivalent to Original quality.":"20 follows the ComfyUI H3 template. 30 or 50 take longer and are comparison choices, not guaranteed improvements. Studio allows up to 100; ComfyUI KSampler's technical limit is 10,000.";
+  document.querySelector(".steps-hint").innerHTML=value==="turbo"?"<strong>6 recommended</strong> · Enter 4–8 steps for Turbo.":"<strong>20 recommended</strong> · Choose a preset or enter a custom value.";
+  $("stepAdvice").textContent=value==="turbo"?"Turbo uses 4–8 steps. More steps do not make it equivalent to Original quality.":"20 is the standard H3 setting. More steps take longer and may not improve quality. Custom range: 20–100.";
   document.querySelectorAll("#stepPresets button").forEach(button=>button.classList.toggle("active",Number(button.dataset.steps)===Number($("steps").value)));
   $("profile").replaceChildren();
   const strong=document.createElement("strong");strong.textContent=info.title+(Number.isInteger(steps)&&steps>=Number($("steps").min)&&steps<=Number($("steps").max)?" · "+steps+" steps":" · choose valid steps");
@@ -467,6 +468,7 @@ function renderRefs() {
     role.onchange=()=>{ref.role=role.value;saveDraft();renderRefs();};
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
+    const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=state.busy;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
     if(ref.kind==="video"){
       const trim=document.createElement("div");trim.className="section";
       const trimToggle=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=state.busy;
@@ -551,21 +553,24 @@ function mentionPreview(item){
 function renderPromptAssets(){
   const wrap=$("promptAssets");wrap.replaceChildren();
   const prompt=$("prompt").value;
-  const items=mentionItems().filter(item=>state.mode==="frames"||new RegExp("@"+item.alias+"(?=$|[^\\p{L}\\p{N}_-])","u").test(prompt));
+  const items=mentionItems();
   for(const item of items){
     const chip=document.createElement("button");chip.type="button";chip.className="prompt-asset";
+    if(new RegExp("@"+item.alias+"(?=$|[^\\p{L}\\p{N}_-])","u").test(prompt))chip.classList.add("used");
     chip.disabled=state.busy;
     chip.title="Insert @"+item.alias+" into the prompt";
-    chip.onclick=()=>{
-      const input=$("prompt"),at=input.selectionStart;
-      input.setRangeText("@"+item.alias+" ",at,input.selectionEnd,"end");
-      input.focus();renderPromptAssets();saveDraft();
-    };
+    chip.onclick=()=>insertReferenceMention(item.alias,false);
     const preview=mentionPreview(item);if(preview)chip.append(preview);
     const name=document.createElement("span");name.textContent="@"+item.alias;
     const tag=document.createElement("small");tag.textContent=item.tag;
     chip.append(name,tag);wrap.append(chip);
   }
+}
+function insertReferenceMention(alias,scroll){
+  const input=$("prompt"),at=input.selectionStart;
+  input.setRangeText("@"+alias+" ",at,input.selectionEnd,"end");
+  input.focus();if(scroll)input.scrollIntoView({behavior:"smooth",block:"center"});
+  renderPromptAssets();saveDraft();
 }
 function mentionState() {
   const input=$("prompt"),before=input.value.slice(0,input.selectionStart);
