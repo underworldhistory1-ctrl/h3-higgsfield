@@ -6,6 +6,8 @@ An independent, creator-friendly interface for **MiniMax H3 video with native au
 
 **[Watch the Spectrum demo](docs/demo/spectrum-no-lora.mp4)** · **[Watch the MotionCache demo](docs/demo/motioncache-no-lora.mp4)** · **[Install](#install-on-windows-or-linux)** · **[Ask a question](https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield/discussions)**
 
+Using an existing OpenBayes persistent workspace? Follow the [OpenBayes setup and recovery notes](docs/OPENBAYES.md). Its startup script checks model mounts, pinned speed nodes, the render queue, and live readiness before reporting success.
+
 ## See it in action
 
 Two renders of the same comedy-club scene and dialogue: **Spectrum** and **MotionCache**. Both are 15 seconds with native audio, 1280 × 704 at 24 fps, 20 steps, and **no LoRAs**. Watch the clips and compare the results.

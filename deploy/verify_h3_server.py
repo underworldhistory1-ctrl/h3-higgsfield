@@ -70,7 +70,9 @@ def main():
     missing_models = [name for name in REQUIRED_MODELS if not ready.get("models", {}).get(name)]
     missing_nodes = [name for name in REQUIRED_NODES if not ready.get("nodes", {}).get(name)]
     vae_tile_fix = bool(ready.get("quality", {}).get("h3_vae_tile_fix"))
-    selected_profiles = tuple(name.strip() for name in os.environ.get("QWEN_IMAGE_PROFILES", "int8").split(",") if name.strip())
+    # Image weights are optional in the direct Windows/Linux installers. Hosts
+    # that require Image mode must explicitly pass their selected profile(s).
+    selected_profiles = tuple(name.strip() for name in os.environ.get("QWEN_IMAGE_PROFILES", "").split(",") if name.strip())
     missing_image_profiles = [name for name in selected_profiles if not image_ready.get("profiles", {}).get(name, {}).get("ready")]
     missing_image_nodes = [name for name in REQUIRED_IMAGE_NODES if not image_ready.get("nodes", {}).get(name)]
     names = loras.get("items", [])

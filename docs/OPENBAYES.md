@@ -3,7 +3,18 @@
 H3 Studio can run on an OpenBayes RTX 5090 workspace with the ComfyUI checkout
 and this repository under `/output/h3-stack`, and the reusable model dataset
 mounted read/write at `/input0/h3-models`. Keep input and output media in the
-workspace's `/output`, not in the model dataset.
+workspace's `/output`, not in the model dataset. Use `install.sh` to prepare a
+new Linux ComfyUI checkout. The optional `deploy/openbayes_h3.sh` is for an
+existing persistent stack with the paths below; it is not a fresh machine
+installer.
+
+For that existing stack, copy `deploy/openbayes_h3.sh` to `/output/h3-stack/h3`
+and run `bash /output/h3-stack/h3 up`. It checks mounts and model sizes,
+installs the pinned Spectrum and MotionCache nodes, checks for an active render
+before any restart, and verifies the live API before reporting readiness.
+`bash /output/h3-stack/h3 verify` reports the current server state without
+restarting it. Its default ComfyUI bind address is localhost; use the SSH
+tunnel below to reach the Studio UI.
 
 The prepared H3 plus Qwen INT8 model set uses about 83 GB of the 100 GB model
 dataset. The three H3 LoRAs are included. BF16 Qwen needs another 31.8 GB and

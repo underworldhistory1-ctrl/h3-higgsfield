@@ -135,7 +135,7 @@ COMFY_PID=$!
 for _ in $(seq 1 360); do
     kill -0 "$COMFY_PID" 2>/dev/null || die "ComfyUI exited during startup."
     if curl -fsS http://127.0.0.1:8188/h3_studio/readiness > /tmp/h3-readiness.json 2>/dev/null \
-       && python "$H3_NODE/deploy/verify_h3_server.py" --url http://127.0.0.1:8188 >/dev/null; then
+       && QWEN_IMAGE_PROFILES="$QWEN_IMAGE_PROFILES" python "$H3_NODE/deploy/verify_h3_server.py" --url http://127.0.0.1:8188 >/dev/null; then
         printf 'ready\n' > "$READY_FILE"
         log "H3 Studio is ready on port 8000."
         break

@@ -412,6 +412,7 @@ def main():
         call(python, PROJECT / "deploy" / "activate_h3.py", "wait", "--url", url, "--timeout", "240")
     env = os.environ.copy()
     env["H3_ACCESS_TOKEN"] = ""
+    env["QWEN_IMAGE_PROFILES"] = args.qwen_image_profiles
     call(python, PROJECT / "deploy" / "verify_h3_server.py", "--url", url, env=env)
     print("H3 Higgsfield is ready:", page)
     webbrowser.open(page)

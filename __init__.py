@@ -686,7 +686,10 @@ async def readiness(request):
 async def image_readiness(request):
     """Report Qwen profiles independently; a partial profile is never selectable."""
     try:
-        comfy_root = pathlib.Path(folder_paths.models_dir).resolve().parent
+        # models_dir may be a symlink to a separately mounted model dataset.
+        # Resolve the ComfyUI checkout itself, or profile checks will look for
+        # /input0/models instead of the actual ComfyUI/models symlink.
+        comfy_root = pathlib.Path(folder_paths.base_path).resolve()
     except (AttributeError, OSError):
         comfy_root = pathlib.Path(folder_paths.__file__).resolve().parent
     profiles = qwen_profile_status(comfy_root)
