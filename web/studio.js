@@ -516,6 +516,16 @@ function mentionItems(){
     tag:ref.kind==="image"?"Subject "+(++image)+" · Picture "+image:ref.kind==="video"?"Video "+(++video):"Audio "+(++audio),
     label:ref.kind==="image"?"Image":ref.kind==="video"?"Video":"Audio"}));
 }
+function mentionPreview(item){
+  if(!item.previewUrl||item.kind==="audio")return null;
+  const preview=document.createElement(item.kind==="video"?"video":"img");
+  preview.src=item.previewUrl;
+  if(item.kind==="video"){
+    preview.muted=true;preview.playsInline=true;preview.preload="metadata";
+    preview.onloadedmetadata=()=>{try{preview.currentTime=Math.min(.1,Math.max(0,(preview.duration||1)-.01));}catch{}};
+  }else preview.alt=item.label+" preview";
+  return preview;
+}
 function renderPromptAssets(){
   const wrap=$("promptAssets");wrap.replaceChildren();
   const prompt=$("prompt").value;
@@ -529,9 +539,7 @@ function renderPromptAssets(){
       input.setRangeText("@"+item.alias+" ",at,input.selectionEnd,"end");
       input.focus();renderPromptAssets();saveDraft();
     };
-    if(item.previewUrl&&item.kind!=="audio"){
-      const img=document.createElement("img");img.src=item.previewUrl;img.alt=item.label+" preview";chip.append(img);
-    }
+    const preview=mentionPreview(item);if(preview)chip.append(preview);
     const name=document.createElement("span");name.textContent="@"+item.alias;
     const tag=document.createElement("small");tag.textContent=item.tag;
     chip.append(name,tag);wrap.append(chip);
@@ -545,9 +553,7 @@ function mentionState() {
   const menu=$("mentionMenu");menu.replaceChildren();
   names.forEach(item=>{
     const b=document.createElement("button");b.type="button";
-    if(item.previewUrl&&item.kind!=="audio"){
-      const img=document.createElement("img");img.src=item.previewUrl;img.alt="";b.append(img);
-    }
+    const preview=mentionPreview(item);if(preview){preview.alt="";b.append(preview);}
     const label=document.createElement("span");label.textContent="@"+item.alias+" · "+item.tag;b.append(label);
     b.onmousedown=e=>{
       e.preventDefault();
