@@ -337,6 +337,7 @@ doctor() {
 case "${1:-up}" in
     up|start|"")
         hr; printf '%sH3 bootstrap%s\n' "$BLD" "$RST"; hr
+        if is_running || pgrep -f "[.]venv/bin/python main.py" >/dev/null 2>&1; then queue_idle; fi
         check_mounts || die "Required persistent mounts are missing"
         ensure_tools
         link_weights; install_extension; install_speed_nodes
