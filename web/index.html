@@ -37,6 +37,7 @@
 .lora-recommendation{margin-top:10px;padding:10px 11px;border:1px solid #657929;border-radius:8px;background:#292f1c;color:#dfe8c8;font-size:11px;line-height:1.5}.lora-recommendation strong{display:block;color:var(--acid);font-size:11px;margin-bottom:2px}
 .ref-fields{grid-template-columns:minmax(0,1fr)}.ref-fields>div{width:100%}.ref-fields input,.ref-fields select{width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis}.ref-insert{display:block;width:100%;margin-top:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}.prompt-asset:not(.used){border-color:#4b4b4b;background:#252525}.prompt-asset:not(.used) small{color:var(--muted)}
 .render-controls{display:block}.steps-control{margin-top:12px}.steps-row{display:grid;grid-template-columns:minmax(74px,90px) minmax(0,1fr);gap:8px;align-items:stretch}.steps-row input{min-width:0}.step-presets{margin:0;min-width:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.step-presets button{min-width:0;padding:6px 3px;font-size:12px}.steps-hint{font-size:10px;color:var(--muted);margin-top:5px}.steps-hint strong{color:var(--acid)}
+.duration-hint{min-height:17px;color:var(--muted);font-size:10px;margin-top:5px}.duration-hint.error{color:var(--bad)}
 @media(max-width:980px){.topnav{margin-left:10px;gap:12px}.connection #connectionText{max-width:110px}}@media(max-width:720px){.topnav{display:flex;margin:0;min-width:0;overflow-x:auto}.topnav a{height:58px;white-space:nowrap;font-size:11px}.brand-name{display:none}.top{gap:10px}.connection #connectionText{display:none}.connection{margin-left:auto}}
 </style>
 </head>
@@ -91,7 +92,7 @@
     <label for="renderMethod">Render method</label><select id="renderMethod"><option value="native">Original quality · recommended</option><option value="spectrum" disabled>Spectrum · approximate acceleration</option><option value="motioncache" disabled>MotionCache · approximate acceleration</option><option value="turbo" disabled>Turbo LoRA · fastest experiment</option></select>
     <div class="tip" id="methodAvailability">Optional methods become available when installed on your ComfyUI server.</div>
     <div class="render-controls">
-     <div><label for="duration">Duration</label><select id="duration"><option value="124">5.2 s</option><option value="175">7.3 s</option><option value="226">9.4 s</option><option value="294">12.3 s</option><option value="362" selected>15.1 s</option></select></div>
+     <div><label for="durationSeconds">Duration (seconds)</label><input id="durationSeconds" type="number" min="5" max="15.1" step="0.1" inputmode="decimal" value="15.1"><input id="duration" type="hidden" value="362"><div class="duration-hint" id="durationHint" role="status" aria-live="polite">Actual H3 length: 15.08 s · 362 frames at 24 fps.</div></div>
      <div class="steps-control"><label for="steps">Sampling steps</label><div class="steps-row"><input id="steps" type="number" min="20" max="100" value="20"><div class="step-presets" id="stepPresets"><button type="button" data-steps="20">20</button><button type="button" data-steps="30">30</button><button type="button" data-steps="50">50</button></div></div><div class="steps-hint"><strong>20 recommended</strong> · Choose a preset or enter a custom value.</div></div>
     </div>
     <div class="tip" id="stepAdvice">20 follows the ComfyUI H3 template. 30 or 50 take longer and are comparison choices, not guaranteed improvements. This interface allows up to 100; ComfyUI KSampler's technical limit is 10,000.</div>
@@ -113,6 +114,6 @@
  </section>
 </main>
 <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle"><div class="settings-head"><h2 id="settingsTitle">Video settings</h2><button id="settingsClose" class="button alt smallbtn" type="button" aria-label="Close settings">✕ Close</button></div><div id="settingsContent"></div></dialog>
-<script src="./studio.js?v=20260930-visual-mentions-2"></script>
+<script src="./studio.js?v=20260930-duration-input-1"></script>
 </body>
 </html>

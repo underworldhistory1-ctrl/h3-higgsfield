@@ -47,6 +47,21 @@ sessionStorage.setItem(sessionIdKey,sessionId);
 sessionStorage.setItem("h3studio.client.id.v1",state.clientId);
 const api = path => (localStorage.getItem(baseKey) || "").replace(/\/$/,"") + path;
 const seconds = () => Number($("duration").value) / 24;
+function durationFrames(requestedSeconds){
+  const step=Math.round((requestedSeconds*24-124)/17);
+  return 124+17*Math.max(0,Math.min(14,step));
+}
+function syncDuration(){
+  const input=$("durationSeconds"),hint=$("durationHint"),requested=Number(input.value);
+  if(input.value===""||!Number.isFinite(requested)||requested<5||requested>15.1){
+    hint.textContent="Enter a duration from 5 to 15.1 seconds.";hint.classList.add("error");return false;
+  }
+  const frames=durationFrames(requested);
+  $("duration").value=String(frames);
+  hint.textContent=`Actual H3 length: ${(frames/24).toFixed(2)} s · ${frames} frames at 24 fps.`;
+  hint.classList.remove("error");
+  return true;
+}
 const sizeKey = () => state.width + "x" + state.height;
 const fmt = n => {
   if (!Number.isFinite(n) || n < 0) return "—";
@@ -158,7 +173,7 @@ document.querySelectorAll(".mode").forEach(b => b.onclick = () => selectMode(b.d
 function saveDraft(){
   try{localStorage.setItem(draftKey,JSON.stringify({
     mode:state.mode,prompts:{...state.prompts,[state.mode]:$("prompt").value},width:state.width,height:state.height,
-    duration:$("duration").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()
+    duration:$("duration").value,durationRequested:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()
   }));}catch{}
 }
 function restoreDraft(){
@@ -305,7 +320,7 @@ function renderEstimates() {
   $("estimateBasis").textContent = state.estimated.basis + ". Includes model load, video and audio. First run may take longer.";
   const risk=state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280;
   $("memoryNotice").classList.toggle("hidden",!risk);
-  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. A 15.1 s Ref2VA render at 1280×704 was killed during video decoding at the 40 GB limit. For this full-quality setting, use a server with more RAM (64 GB recommended). Shorter/lower output may use less memory, but changes the result.`:"";
+  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM, separate from the RTX 5090's VRAM. A previous 15.1 s Ref2VA render at 1280×704 ran out of system RAM during video decoding. This exact setting is blocked here to avoid losing another long render. A server with 64 GB system RAM is recommended; shorter renders may use less, but have not been validated here.`:"";
 }
 function renderLoras() {
   const list=$("loraList");list.replaceChildren();
@@ -354,11 +369,12 @@ async function loadLoras(){
   }
 }
 $("refreshLoras").onclick=loadLoras;
-["duration","steps","refSize"].forEach(id => $(id).addEventListener("change",renderEstimates));
+["steps","refSize"].forEach(id => $(id).addEventListener("change",renderEstimates));
+$("durationSeconds").addEventListener("input",()=>{if(syncDuration())renderEstimates();saveDraft();});
 $("steps").addEventListener("input",()=>{renderMethodInfo();const value=Number($("steps").value);if(Number.isInteger(value)&&value>=Number($("steps").min)&&value<=Number($("steps").max))renderEstimates();else $("estimateNote").textContent="Enter "+$("steps").min+"–"+$("steps").max+" steps to update the estimate.";});
 $("renderMethod").addEventListener("change",()=>{if(method()==="turbo")$("steps").value="6";else if(Number($("steps").value)<20)$("steps").value="20";renderMethodInfo();renderLoras();renderEstimates();saveDraft();});
 document.querySelectorAll("#stepPresets button").forEach(button=>button.onclick=()=>{$("steps").value=button.dataset.steps;renderMethodInfo();renderEstimates();saveDraft();});
-["prompt","duration","steps","seed","refSize","renderMethod"].forEach(id => $(id).addEventListener("input",saveDraft));
+["prompt","steps","seed","refSize","renderMethod"].forEach(id => $(id).addEventListener("input",saveDraft));
 $("randomSeed").onclick = () => {$("seed").value = Math.floor(Math.random()*2**31);saveDraft();};
 
 function frameBox(which) {
@@ -565,6 +581,11 @@ function renderPromptAssets(){
     const tag=document.createElement("small");tag.textContent=item.tag;
     chip.append(name,tag);wrap.append(chip);
   }
+  const storedFrames=Number($("duration").value);
+  if(!Number.isInteger(storedFrames)||storedFrames<124||storedFrames>362||(storedFrames-5)%17!==0)$("duration").value="362";
+  $("durationSeconds").value=Number.isFinite(Number(draft.durationRequested))&&Number(draft.durationRequested)>=5&&Number(draft.durationRequested)<=15.1
+    ?String(draft.durationRequested):(Number($("duration").value)/24).toFixed(1);
+  syncDuration();
 }
 function insertReferenceMention(alias,scroll){
   const input=$("prompt"),at=input.selectionStart;
@@ -760,7 +781,7 @@ function setBusy(value) {
   state.busy=value;
   $("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);
   document.querySelectorAll(".mode").forEach(b=>b.disabled=value);
-  for(const id of ["prompt","duration","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod","fitImages","fitFrames"])$(id).disabled=value;
+  for(const id of ["prompt","durationSeconds","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod","fitImages","fitFrames"])$(id).disabled=value;
   document.querySelectorAll("#stepPresets button").forEach(button=>button.disabled=value);
   updateCapabilities();
   renderLoras();renderRefs();renderEstimates();
@@ -1012,6 +1033,7 @@ async function generate() {
   let prompt,settings;
   try{
     prompt=resolvedPrompt();
+    if(!syncDuration())throw Error("Enter a duration from 5 to 15.1 seconds.");
     const steps=Number($("steps").value),seed=Number($("seed").value);
     if(!Number.isInteger(steps)||steps<Number($("steps").min)||steps>Number($("steps").max))throw Error("Sampling steps must be between "+$("steps").min+" and "+$("steps").max+" for this render method.");
     if(!methodAvailable(method()))throw Error("The selected render method is not installed on this ComfyUI server.");
@@ -1043,7 +1065,7 @@ async function generate() {
         throw Error("Selected audio references and video soundtracks exceed 15 seconds combined. Shorten or deselect one before generating.");
     }
     if(state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280)
-      throw Error("This full-length Ref2VA setting exhausted this server's system RAM during video decoding. Use a server with more RAM (64 GB recommended) to keep this quality setting.");
+      throw Error("A previous 15.1 s Ref2VA render at this resolution ran out of this server's system RAM during video decoding. A server with 64 GB system RAM is recommended for this setting.");
     for(const ref of state.refs.filter(item=>item.kind==="video")){
       const source=Number(ref.localDuration||ref.meta?.source_duration||0);
       if(ref.trimEnabled){
