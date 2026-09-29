@@ -815,7 +815,8 @@ function saveSession(){
       server:localStorage.getItem(baseKey)||location.origin,
       results:state.results.filter(e=>!e.kept&&isStudioOutputName(e.file?.filename)).map(e=>({file:e.file,meta:e.meta})),
       active:state.running?{id:state.running,started:state.started,renderStarted:state.renderStarted,meta:state.runMeta,
-        uploads:state.uploads.slice(),estimated:state.estimated}:null
+        uploads:state.uploads.slice(),estimated:state.estimated,lastStep:state.lastStep,
+        stepAt:state.stepAt,stepDurations:state.stepDurations.slice(-8)}:null
     }));
   }catch{}
 }
@@ -846,8 +847,12 @@ async function restoreSession(){
       state.runMeta=active.meta||{};
       state.uploads=Array.isArray(active.uploads)?active.uploads.filter(x=>typeof x==="string"):[];
       state.estimated=active.estimated||null;
+      state.lastStep=Number.isFinite(active.lastStep)?Math.max(0,Number(active.lastStep)):0;
+      state.stepAt=Number.isFinite(active.stepAt)?Number(active.stepAt):0;
+      state.stepDurations=Array.isArray(active.stepDurations)?active.stepDurations.filter(x=>Number.isFinite(x)&&x>0).slice(-8):[];
       setBusy(true);
-      setProgress("Restoring queued render",4,null,true);
+      if(state.lastStep>0)samplerProgress(state.lastStep,Number(state.runMeta?.settings?.steps)||Number($("steps").value));
+      else setProgress("Restoring queued render",4,null,true);
       $("stage").innerHTML="<div class='stage-empty'><b>Render in progress</b>Checking the server for your video.</div>";
       await Promise.allSettled([pollHistory(),pollQueue()]);
     }
@@ -1239,6 +1244,7 @@ function showPreview(blob){
 }
 function samplerProgress(value,max){
   const now=Date.now(),step=Math.round(value),total=Math.round(max);
+  if(!Number.isFinite(step)||!Number.isFinite(total)||total<1||step<0)return;
   if(step>state.lastStep&&state.stepAt&&state.lastStep>0){
     state.stepDurations.push((now-state.stepAt)/1000/(step-state.lastStep));
     state.stepDurations=state.stepDurations.slice(-8);
@@ -1248,6 +1254,16 @@ function samplerProgress(value,max){
   const baseline=state.estimated?(state.estimated.low+state.estimated.high)/2:null;
   const remaining=avg?avg*(total-step)+Math.max(20,avg*total*.13):baseline?Math.max(0,baseline-(now-state.started)/1000):null;
   setProgress("H3 sampling · "+step+"/"+total,10+Math.min(80,80*step/total),remaining);
+  saveSession();
+}
+async function pollServerProgress(id){
+  try{
+    const r=await fetch(api("/h3_studio/job_progress?prompt_id="+encodeURIComponent(id)),{cache:"no-store"});
+    if(!r.ok)return;
+    const data=await r.json();
+    if(state.running!==id||data.prompt_id!==id||!Number.isFinite(data.step)||!Number.isFinite(data.total))return;
+    if(data.step>=state.lastStep&&data.total>0)samplerProgress(data.step,data.total);
+  }catch{}
 }
 function onSocket(event){
   if(typeof event.data!=="string"){
@@ -1329,7 +1345,8 @@ async function pollQueue(){
     const r=await fetch(api("/queue"));if(!r.ok)throw Error("queue unavailable");
     const data=await r.json(),running=data.queue_running||[],pending=data.queue_pending||[];
     const id=state.running;
-    const runningHere=running.some(item=>item[1]===id);
+    const runningItem=running.find(item=>item[1]===id);
+    const runningHere=!!runningItem;
     const position=pending.findIndex(item=>item[1]===id);
     const count=running.length+pending.length;
     $("queueInfo").textContent=id?(runningHere?"Queue: rendering now · "+count+" job(s) on server":position>=0?"Queue: position "+(position+1)+" of "+pending.length+" waiting · "+count+" total":"Queue: checking job history · "+count+" on server"):"Queue: "+count+" job(s) on server";
@@ -1340,8 +1357,17 @@ async function pollQueue(){
     }
     if(id&&(runningHere||position>=0))state.queueMissingSince=null;
     if(id&&runningHere){
+      // ComfyUI sends sampler updates only to the client ID that queued the job.
+      // A restored tab may have a new ID, even while the queue still owns the render.
+      const ownerId=runningItem[3]?.client_id;
+      if(ownerId&&ownerId!==state.clientId){
+        state.clientId=ownerId;
+        sessionStorage.setItem("h3studio.client.id.v1",ownerId);
+        connectSocket();
+      }
       if(!state.renderStarted){state.renderStarted=Date.now();saveSession();}
-      if(state.phaseEtaAt===null&&["Restoring","Waiting in queue"].some(prefix=>$("status").textContent.startsWith(prefix))){
+      await pollServerProgress(id);
+      if(!state.lastStep&&state.phaseEtaAt===null&&["Restoring","Waiting in queue"].some(prefix=>$("status").textContent.startsWith(prefix))){
         const midpoint=state.estimated?(state.estimated.low+state.estimated.high)/2:null;
         setProgress("H3 rendering · waiting for step updates",8,midpoint,true);
       }

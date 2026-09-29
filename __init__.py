@@ -682,6 +682,27 @@ async def readiness(request):
                               "quality": {"h3_vae_tile_fix": vae_tile_fix}})
 
 
+@PromptServer.instance.routes.get("/h3_studio/job_progress")
+async def job_progress(request):
+    """Return the active sampler step so a refreshed Studio can resume its display."""
+    prompt_id = request.query.get("prompt_id", "")
+    if not prompt_id or len(prompt_id) > 128:
+        return web.json_response({"error": "invalid prompt_id"}, status=400)
+    from comfy_execution.progress import get_progress_state
+    registry = get_progress_state()
+    if registry.prompt_id != prompt_id:
+        return web.json_response({"prompt_id": prompt_id, "step": None, "total": None})
+    sampler = registry.nodes.get("8")
+    if not sampler:
+        return web.json_response({"prompt_id": prompt_id, "step": None, "total": None})
+    return web.json_response({
+        "prompt_id": prompt_id,
+        "step": sampler["value"],
+        "total": sampler["max"],
+        "state": sampler["state"].value,
+    })
+
+
 @PromptServer.instance.routes.get("/h3_studio/image_readiness")
 async def image_readiness(request):
     """Report Qwen profiles independently; a partial profile is never selectable."""

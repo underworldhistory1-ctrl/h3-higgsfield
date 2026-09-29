@@ -33,6 +33,10 @@ The Original method uses 20 steps by default with `res_multistep`, `simple`, CFG
 
 The extension's `/h3_studio/readiness` route checks model sizes and registered node names. The frontend checks mode-specific nodes and installed LoRA file names before `/prompt`. The readiness result does not prove output quality or audio sync. Keep the `web/` implementation and backend API together when deploying; copying only workflows is insufficient.
 
+During an active render, `/h3_studio/job_progress` reads ComfyUI's sampler progress for node 8. The Studio also saves the last observed step in browser session storage. On refresh it restores that step and polls the server, so a lost or replaced WebSocket does not reset the visible progress. This endpoint becomes available after ComfyUI loads the updated extension on restart; deployment must not restart an active render.
+
+`MiniMaxH3AddGuide` and latent `denoise_mask` are supported by newer ComfyUI builds but are not part of the Studio graphs above. Arbitrary timeline anchors and masked regeneration require explicit user inputs and separate graph paths; they do not silently enhance Text, Frames, or References. `Use as` reference roles affect prompt guidance, while actual reference files continue to use node 6's image, video and audio inputs.
+
 ## Qwen Image 2.1 graphs
 
 The Image workspace is separate from all H3 video branches. Both Create and Edit load the selected Qwen diffusion model, Qwen VL encoder and Qwen 2.1 VAE, then use `TextEncodeQwenImage21`, `KSampler` (Euler/simple, CFG 1), `VAEDecode` and `QwenStudioSaveImage`.
