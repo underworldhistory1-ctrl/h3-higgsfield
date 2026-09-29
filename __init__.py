@@ -363,13 +363,20 @@ async def upload_ref(request):
                     too_large = stream.width > 1920 or stream.height > 1080
                     if too_large and not resize:
                         raise ValueError("Reference video is too large; enable resize to fit 1920x1080.")
+                    trim_adjusted = False
                     if trim_duration is not None:
-                        if duration and trim_start + trim_duration > duration + .1:
-                            raise ValueError("Trim range extends beyond the source video.")
+                        if duration:
+                            available = duration - trim_start
+                            if available < 2:
+                                raise ValueError(f"Trim start {trim_start:.2f}s leaves less than 2s of the {duration:.2f}s source video.")
+                            if trim_duration > available:
+                                trim_duration = min(15, math.floor((available + 1e-6) * 100) / 100)
+                                trim_adjusted = True
                     elif not 1.9 <= duration <= 15.1:
                         raise ValueError("H3 reference videos must be 2–15 seconds long. Select a 2–15 second trim.")
                     info.update(duration=round(duration, 2), fps=round(fps, 2), has_audio=bool(media.streams.audio),
-                                source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height)
+                                source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height,
+                                trim_adjusted=trim_adjusted)
                 else:
                     if not media.streams.audio:
                         raise ValueError("This file has no audio stream.")
@@ -401,7 +408,8 @@ async def upload_ref(request):
                             normalized_from_fps=original_fps if abs(original_fps - 24) > .02 else None,
                             size=os.path.getsize(normalized_path),
                             resized=stream.width != info["source_width"] or stream.height != info["source_height"],
-                            trim_start=trim_start, trimmed=trim_duration is not None)
+                            trim_start=trim_start, trim_duration=round(trim_duration, 2) if trim_duration is not None else None,
+                            trimmed=trim_duration is not None)
             os.unlink(path)
             path, name = normalized_path, normalized_name
             normalized_path = None

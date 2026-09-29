@@ -412,6 +412,15 @@ function aliasName(fileName) {
   while(state.refs.some(r=>r.alias===unique)) {const suffix="_"+i++;unique=name.slice(0,32-suffix.length)+suffix;}
   return unique;
 }
+function fitReferenceTrim(ref) {
+  const source=Number(ref.meta?.source_duration||ref.localDuration||0);
+  const start=Number(ref.trimStart);
+  if(!ref.trimEnabled||!Number.isFinite(source)||!Number.isFinite(start)||start<0||source-start<2)return false;
+  const available=Math.min(15,Math.floor((source-start+0.000001)*100)/100);
+  if(Number.isFinite(Number(ref.trimDuration))&&Number(ref.trimDuration)>=2&&Number(ref.trimDuration)<=available)return false;
+  ref.trimDuration=available;
+  return true;
+}
 function videoReferenceDuration() {
   const videos=state.refs.filter(ref=>ref.kind==="video");
   const known=videos.map(ref=>Number(ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
@@ -447,7 +456,7 @@ function renderRefs() {
       if(ref.kind==="video"){
         preview.muted=true;preview.playsInline=true;preview.preload="metadata";
         preview.onloadedmetadata=()=>{
-          if(Number.isFinite(preview.duration)&&preview.duration>0){ref.localDuration=preview.duration;if(preview.duration>15.1&&!ref.trimEnabled){ref.trimEnabled=true;ref.trimDuration=15;renderRefs();}else updateRefDurationNotice();}
+          if(Number.isFinite(preview.duration)&&preview.duration>0){ref.localDuration=preview.duration;if(preview.duration>15.1&&!ref.trimEnabled){ref.trimEnabled=true;ref.trimDuration=15;renderRefs();}else if(fitReferenceTrim(ref)){renderRefs();saveDraft();}else updateRefDurationNotice();}
           try{preview.currentTime=Math.min(.1,Math.max(0,(preview.duration||1)-.01));}catch{}
         };
       }
@@ -493,9 +502,9 @@ function renderRefs() {
     if(ref.kind==="video"){
       const trim=document.createElement("div");trim.className="section";
       const trimToggle=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=state.busy;
-      toggle.onchange=()=>{ref.trimEnabled=toggle.checked;if(ref.trimEnabled&&!ref.trimDuration)ref.trimDuration=Math.min(15,ref.localDuration||15);renderRefs();saveDraft();};
+      toggle.onchange=()=>{ref.trimEnabled=toggle.checked;fitReferenceTrim(ref);renderRefs();saveDraft();};
       trimToggle.append(toggle,document.createTextNode(" Trim this video to a selected range"));trim.append(trimToggle);
-      if(ref.trimEnabled){const range=document.createElement("div");range.className="row";for(const [key,label,min,max] of [["trimStart","Start (s)",0,3600],["trimDuration","Use (s)",2,15]]){const wrap=document.createElement("div"),caption=document.createElement("label"),input=document.createElement("input");caption.textContent=label;input.type="number";input.min=min;input.max=max;input.step="0.1";input.setAttribute("aria-label",label+" for @"+ref.alias);input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=state.busy;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&Number.isFinite(ref.trimStart)){try{const video=icon.querySelector("video");if(video)video.currentTime=ref.trimStart;}catch{}}updateRefDurationNotice();saveDraft();};wrap.append(caption,input);range.append(wrap);}trim.append(range);}
+      if(ref.trimEnabled){const range=document.createElement("div");range.className="row";let useInput;const hint=document.createElement("div");hint.className="tip";const updateHint=()=>{const source=Number(ref.meta?.source_duration||ref.localDuration||0),available=source-Number(ref.trimStart);hint.textContent=!source?"Checking source video length…":available<2?"Start must leave at least 2 seconds of video.":"Available from start: "+available.toFixed(2)+" s. Use up to "+Math.min(15,available).toFixed(2)+" s.";hint.style.color=source&&available<2?"var(--bad)":"";};for(const [key,label,min,max] of [["trimStart","Start (s)",0,3600],["trimDuration","Use (s)",2,15]]){const wrap=document.createElement("div"),caption=document.createElement("label"),input=document.createElement("input");caption.textContent=label;input.type="number";input.min=min;input.max=max;input.step="0.01";input.setAttribute("aria-label",label+" for @"+ref.alias);input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=state.busy;if(key==="trimDuration")useInput=input;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&Number.isFinite(ref.trimStart)){try{const video=icon.querySelector("video");if(video)video.currentTime=ref.trimStart;}catch{}if(fitReferenceTrim(ref))useInput.value=ref.trimDuration;}updateHint();updateRefDurationNotice();saveDraft();};wrap.append(caption,input);range.append(wrap);}trim.append(range,hint);updateHint();}
       const fitLabel=document.createElement("label"),fit=document.createElement("input");fit.type="checkbox";fit.checked=ref.fitVideo!==false;fit.disabled=state.busy;fit.onchange=()=>{ref.fitVideo=fit.checked;saveDraft();};fitLabel.append(fit,document.createTextNode(" Auto fit oversized video to 1920×1080"));trim.append(fitLabel);card.append(trim);
       const guidance=document.createElement("div");guidance.className="tip video-guidance";
       guidance.textContent=ref.role==="whole scene"
@@ -1067,12 +1076,12 @@ async function generate() {
     if(state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280)
       throw Error("A previous 15.1 s Ref2VA render at this resolution ran out of this server's system RAM during video decoding. A server with 64 GB system RAM is recommended for this setting.");
     for(const ref of state.refs.filter(item=>item.kind==="video")){
-      const source=Number(ref.localDuration||ref.meta?.source_duration||0);
+      const source=Number(ref.meta?.source_duration||ref.localDuration||0);
       if(ref.trimEnabled){
         const start=Number(ref.trimStart),length=Number(ref.trimDuration);
         if(!Number.isFinite(start)||start<0||!Number.isFinite(length)||length<2||length>15)
           throw Error(`@${ref.alias}: trim start must be 0 or more and selected length 2–15 seconds.`);
-        if(source&&start+length>source+.1)throw Error(`@${ref.alias}: trim range extends beyond the ${source.toFixed(2)} s source.`);
+        if(source&&start+length>source+.01)throw Error(`@${ref.alias}: selected range ends at ${(start+length).toFixed(2)} s, but the source ends at ${source.toFixed(2)} s. Shorten Use (s).`);
       }else if(source>15.1)throw Error(`@${ref.alias}: source is ${source.toFixed(2)} s. Enable Trim and select 2–15 seconds.`);
     }
     const selectedLoras=state.loras.filter(item=>item.enabled).map(item=>item.name);
@@ -1118,6 +1127,7 @@ async function generate() {
       for(const ref of orderedRefs()){
         const result=await sendFile(ref.file,ref.kind,"@"+ref.alias,ref);
         ref.meta=result;
+        if(ref.kind==="video"&&result.trim_adjusted){ref.trimDuration=result.trim_duration;renderRefs();saveDraft();}
         if(ref.kind==="video"&&ref.useAudio&&!result.has_audio){
           ref.useAudio=false;renderRefs();
           throw Error("Video @"+ref.alias+" has no soundtrack. Its audio option was turned off; retry to use its picture only.");
