@@ -189,6 +189,11 @@ function restoreDraft(){
       if([...$(id).options].some(option=>option.value===String(draft[id])))$(id).value=draft[id];
     }else if(draft[id]!==undefined)$(id).value=draft[id];
   }
+  const storedFrames=Number($("duration").value);
+  if(!Number.isInteger(storedFrames)||storedFrames<124||storedFrames>362||(storedFrames-5)%17!==0)$("duration").value="362";
+  $("durationSeconds").value=Number.isFinite(Number(draft.durationRequested))&&Number(draft.durationRequested)>=5&&Number(draft.durationRequested)<=15.1
+    ?String(draft.durationRequested):(Number($("duration").value)/24).toFixed(1);
+  syncDuration();
   $("prompt").value=state.prompts[state.mode]||"";
   const draftSteps=Number($("steps").value);
   if($("renderMethod").value==="turbo"){
@@ -581,11 +586,6 @@ function renderPromptAssets(){
     const tag=document.createElement("small");tag.textContent=item.tag;
     chip.append(name,tag);wrap.append(chip);
   }
-  const storedFrames=Number($("duration").value);
-  if(!Number.isInteger(storedFrames)||storedFrames<124||storedFrames>362||(storedFrames-5)%17!==0)$("duration").value="362";
-  $("durationSeconds").value=Number.isFinite(Number(draft.durationRequested))&&Number(draft.durationRequested)>=5&&Number(draft.durationRequested)<=15.1
-    ?String(draft.durationRequested):(Number($("duration").value)/24).toFixed(1);
-  syncDuration();
 }
 function insertReferenceMention(alias,scroll){
   const input=$("prompt"),at=input.selectionStart;
