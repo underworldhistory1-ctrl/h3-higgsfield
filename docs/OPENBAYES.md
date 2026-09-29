@@ -40,3 +40,16 @@ a new one. Never put the password in Git or a saved script.
 After installing optional Spectrum and MotionCache nodes, restart ComfyUI only
 when its queue is empty. Confirm readiness from the running server, then use
 the Studio UI. A ready API does not prove a full video or image render.
+
+## System RAM for full Ref2VA renders
+
+The 40 GB RAM OpenBayes RTX 5090 workspace hit its cgroup memory limit during
+Video VAE decoding of a 362-frame, 1280×704 Ref2VA render after completing
+20 sampling steps. `memory.events` recorded one `oom_kill`; ComfyUI stopped and
+no output was saved. This is system RAM, not the RTX 5090's VRAM. Choose at
+least 64 GB system RAM for this full-length quality setting, or use a shorter
+render and review it. Studio warns and blocks the exact known failing case on
+sub-48 GB containers rather than silently lowering resolution or duration.
+The observed sampler alone took about 88 minutes (~264 seconds per step), so
+the initial uncalibrated ETA on that host was too optimistic. A successful
+completed render is needed before Studio can calibrate its saved timing.

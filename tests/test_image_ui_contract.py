@@ -9,12 +9,13 @@ class ImageUiContractTests(unittest.TestCase):
     def test_image_workspace_has_required_controls_and_accessible_dialog(self):
         html = (ROOT / "web" / "image.html").read_text(encoding="utf-8")
         for control in (
-            "createMode", "editMode", "referenceFiles", "referenceList", "prompt",
+            "referenceFiles", "referenceList", "referenceCount", "fitReferences", "mentionMenu", "mentionList", "prompt",
             "profile", "aspect", "resolution", "steps", "seed", "transparent",
             "generate", "cancel", "stage", "progressBar", "results", "detailsDialog",
         ):
             self.assertIn(f'id="{control}"', html)
-        self.assertIn('aria-label="Image generation mode"', html)
+        self.assertNotIn('id="editMode"', html)
+        self.assertIn('id="editPanel"', html)
         self.assertIn('href="index.html"', html)
 
     def test_video_workspace_links_to_image_workspace(self):
@@ -32,6 +33,8 @@ class ImageUiContractTests(unittest.TestCase):
         self.assertIn("qwen.activeJob", script)
         self.assertIn("new WebSocket", script)
         self.assertIn("QwenStudioSaveImage", script)
+        self.assertIn("resolveMentions", script)
+        self.assertIn("pollImageProgress", script)
 
 
 if __name__ == "__main__":

@@ -55,16 +55,18 @@
    </div>
    <section class="panel" id="framesSection" hidden>
     <h2>Start &amp; end frames</h2><p>Set the exact first frame, last frame, or both. The first image should match the canvas aspect ratio.</p>
-    <div class="framegrid">
+   <div class="framegrid">
      <div><label for="firstFile">START FRAME</label><div class="uploadbox" id="firstBox" role="button" tabindex="0">+ Add start frame</div><input type="file" id="firstFile" accept="image/png,image/jpeg,image/webp" hidden><button class="button alt smallbtn hidden" id="clearFirst">Remove</button></div>
      <div><label for="lastFile">END FRAME</label><div class="uploadbox" id="lastBox" role="button" tabindex="0">+ Add end frame</div><input type="file" id="lastFile" accept="image/png,image/jpeg,image/webp" hidden><button class="button alt smallbtn hidden" id="clearLast">Remove</button></div>
     </div><div class="tip" id="frameHint">Add at least one frame to generate in this mode.</div>
+    <label style="display:flex;gap:8px;align-items:center"><input id="fitFrames" type="checkbox" checked style="width:auto"> Auto fit oversized start/end images · 2048 px maximum</label>
    </section>
    <section class="panel" id="refsSection" hidden>
     <h2>Reference library</h2><p>Name each asset, then type @name in the prompt. Each asset is bound to its H3 reference input.</p>
     <div class="ref-add"><select id="refKind" aria-label="Reference type"><option value="image">Image · person / place / look</option><option value="video">Video · motion / scene guide</option><option value="audio">Audio · voice / music</option></select><button class="button alt smallbtn" id="addRef">+ Add</button></div>
     <input type="file" id="refFile" class="file-picker" aria-label="Choose reference file"><div id="refs" class="refs"></div><div id="refDurationNotice" class="tip" aria-live="polite"></div>
-    <div class="tip">Video references guide a new generation. “Whole scene” asks H3 to follow the full clip while changing the detail in your prompt, but cannot preserve every other frame or pixel. Up to 9 images, 3 videos, 3 audio references and 12 files total. A selected video soundtrack counts as audio. Each video/audio: 2–15 s; each type totals 15 s. Other video frame rates are converted to H3's 24 fps after upload.</div>
+    <label style="display:flex;gap:8px;align-items:center"><input id="fitImages" type="checkbox" checked style="width:auto"> Auto fit oversized reference images · 2048 px maximum</label>
+    <div class="tip">Video references guide a new generation. “Whole scene” asks H3 to follow the full clip while changing the detail in your prompt, but cannot preserve every other frame or pixel. Up to 9 images, 3 videos, 3 audio references and 12 files total. A selected video soundtrack counts as audio. Each video/audio: 2–15 s; each type totals 15 s. Trim longer clips below; oversized video can fit within 1920×1080. Frame rates convert to 24 fps after upload.</div>
     <div class="section"><label for="refSize">REFERENCE IMAGE DETAIL</label><select id="refSize"><option value="max" selected>Max reference detail · up to 2048 px</option><option value="match">Match output canvas · faster</option></select><div class="tip">Max affects reference identity detail, not output resolution, and can be much slower.</div></div>
    </section>
    <section class="panel">
@@ -91,7 +93,7 @@
     </div>
     <div class="tip" id="stepAdvice">20 follows the ComfyUI H3 template. 30 or 50 take longer and are comparison choices, not guaranteed improvements. This interface allows up to 100; ComfyUI KSampler's technical limit is 10,000.</div>
     <div class="profile" id="profile"><strong>Quality baseline · 20 steps</strong><br>Original H3 path. Speed LoRAs and approximations are off by default.</div>
-    <div class="estimate" id="estimateNote"></div><div class="tip" id="estimateBasis"></div>
+    <div class="estimate" id="estimateNote"></div><div class="tip" id="estimateBasis"></div><div id="memoryNotice" class="notice error hidden" role="status"></div>
    </section>
    <details class="panel details"><summary>Advanced settings</summary><label for="seed">SEED</label><div class="row"><input id="seed" type="number" value="42"><button id="randomSeed" class="button alt smallbtn">Random</button></div><label for="server">COMFYUI ADDRESS</label><input id="server" placeholder="Use this server"><div class="tip">Leave empty when this page is served by ComfyUI.</div><button id="saveServer" class="button alt smallbtn" style="margin-top:8px">Save address</button></details>
   </div>

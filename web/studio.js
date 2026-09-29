@@ -4,7 +4,7 @@ const state = {
   mode: "text", prompts: {text:"",frames:"",refs:""}, width: 1280, height: 704, refs: [], first: null, last: null,
   running: null, started: 0, renderStarted: 0, samplingStart: 0, stepAt: 0, lastStep: 0,
   stepDurations: [], estimated: null, uploads: [], results: [], current: null, visibleResults: 8,
-  gpu: "unknown", clientId: sessionStorage.getItem("h3studio.client.id.v1")||crypto.randomUUID(), socket: null, reconnect: 0,
+  gpu: "unknown", ramLimit: null, clientId: sessionStorage.getItem("h3studio.client.id.v1")||crypto.randomUUID(), socket: null, reconnect: 0,
   estimateTimer: null, pendingRefKind: null, busy: false,
   loras: [], lorasLoaded: false, libraryLoadedFor: null, socketEpoch: 0,
   serverSamples: [], historySamples: [],
@@ -234,7 +234,9 @@ function captureSettings(){
     steps:Number($("steps").value),seed:Number($("seed").value),render_method:method(),
     loras:adapters,reference_detail:refs?$("refSize").value:null,
     references:refs?state.refs.map(ref=>({name:"@"+ref.alias,type:ref.kind,use_as:ref.role,
-      file:ref.file.name,video_soundtrack:!!ref.useAudio})):[],
+      file:ref.file.name,video_soundtrack:!!ref.useAudio,
+      trim:ref.kind==="video"&&ref.trimEnabled?{start:Number(ref.trimStart),duration:Number(ref.trimDuration)}:null,
+      auto_fit:ref.kind==="video"?ref.fitVideo!==false:ref.kind==="image"?$("fitImages").checked:null})):[],
     start_frame:state.mode==="frames"?state.first?.file.name||null:null,
     end_frame:state.mode==="frames"?state.last?.file.name||null:null,
     prompt:$("prompt").value.slice(0,16000),
@@ -300,6 +302,9 @@ function renderEstimates() {
   state.estimated = estimateFor();
   $("estimateNote").textContent = "Estimated " + sizeKey() + ": " + fmt(state.estimated.low) + " – " + fmt(state.estimated.high);
   $("estimateBasis").textContent = state.estimated.basis + ". Includes model load, video and audio. First run may take longer.";
+  const risk=state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280;
+  $("memoryNotice").classList.toggle("hidden",!risk);
+  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. A 15.1 s Ref2VA render at 1280×704 was killed during video decoding at the 40 GB limit. For this full-quality setting, use a server with more RAM (64 GB recommended). Shorter/lower output may use less memory, but changes the result.`:"";
 }
 function renderLoras() {
   const list=$("loraList");list.replaceChildren();
@@ -387,7 +392,7 @@ function aliasName(fileName) {
 }
 function videoReferenceDuration() {
   const videos=state.refs.filter(ref=>ref.kind==="video");
-  const known=videos.map(ref=>Number(ref.meta?.duration||ref.localDuration));
+  const known=videos.map(ref=>Number(ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
   return videos.length&&known.every(value=>Number.isFinite(value)&&value>0)
     ?known.reduce((sum,value)=>sum+value,0):null;
 }
@@ -395,13 +400,18 @@ function updateRefDurationNotice() {
   const notice=$("refDurationNotice");
   const total=videoReferenceDuration();
   const count=state.refs.filter(ref=>ref.kind==="video").length;
-  if(!count){notice.textContent="";return;}
-  notice.style.color=total!==null&&total>15.1?"var(--bad)":"var(--muted)";
-  notice.textContent=total===null
+  const audio=state.refs.filter(ref=>ref.kind==="audio"||ref.kind==="video"&&ref.useAudio);
+  const audioKnown=audio.map(ref=>Number(ref.kind==="video"&&ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
+  const audioTotal=audio.length&&audioKnown.every(value=>Number.isFinite(value)&&value>0)?audioKnown.reduce((sum,value)=>sum+value,0):null;
+  if(!count&&!audio.length){notice.textContent="";return;}
+  notice.style.color=total!==null&&total>15.1||audioTotal!==null&&audioTotal>15.1?"var(--bad)":"var(--muted)";
+  const videoText=!count?"":total===null
     ?"Checking reference video lengths · 15 s combined maximum."
     :total>15.1
-      ?"Video references total "+total.toFixed(2)+" s; H3 allows 15 s combined. Trim at least "+(total-15).toFixed(2)+" s before generating."
+      ?"Video references total "+total.toFixed(2)+" s; H3 allows 15 s combined. Shorten the selected clips by "+(total-15).toFixed(2)+" s."
       :"Video references: "+total.toFixed(2)+" / 15 s combined.";
+  const audioText=!audio.length?"":audioTotal===null?"Checking selected audio lengths.":"Selected audio, including video soundtracks: "+audioTotal.toFixed(2)+" / 15 s combined.";
+  notice.textContent=[videoText,audioText].filter(Boolean).join(" ");
 }
 function renderRefs() {
   $("refs").replaceChildren();
@@ -415,7 +425,7 @@ function renderRefs() {
       if(ref.kind==="video"){
         preview.muted=true;preview.playsInline=true;preview.preload="metadata";
         preview.onloadedmetadata=()=>{
-          if(Number.isFinite(preview.duration)&&preview.duration>0){ref.localDuration=preview.duration;updateRefDurationNotice();}
+          if(Number.isFinite(preview.duration)&&preview.duration>0){ref.localDuration=preview.duration;if(preview.duration>15.1&&!ref.trimEnabled){ref.trimEnabled=true;ref.trimDuration=15;renderRefs();}else updateRefDurationNotice();}
           try{preview.currentTime=Math.min(.1,Math.max(0,(preview.duration||1)-.01));}catch{}
         };
       }
@@ -428,7 +438,8 @@ function renderRefs() {
     head.append(icon,title,remove);
     const meta=document.createElement("div");meta.className="refmeta";
     meta.textContent=({image:"Image",video:"Video",audio:"Audio"}[ref.kind])+" · "+ref.file.name
-      +(ref.meta?.duration?" · "+ref.meta.duration+"s":"")
+      +(ref.kind==="video"&&ref.localDuration?" · source "+ref.localDuration.toFixed(2)+"s":ref.kind==="audio"&&ref.localDuration?" · "+ref.localDuration.toFixed(2)+"s":"")
+      +(ref.meta?.duration?" · used "+ref.meta.duration+"s":ref.kind==="video"&&ref.trimEnabled?" · selected "+Number(ref.trimDuration).toFixed(2)+"s":"")
       +(ref.meta?.normalized_from_fps?" · converted "+ref.meta.normalized_from_fps+"→24 fps":"")
       +(ref.uploadProgress!==undefined?" · Uploading "+ref.uploadProgress+"%":ref.uploadReady?" · Uploaded and checked":" · Selected locally · uploads when you generate");
     const fields=document.createElement("div");fields.className="ref-fields";
@@ -457,6 +468,12 @@ function renderRefs() {
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
     if(ref.kind==="video"){
+      const trim=document.createElement("div");trim.className="section";
+      const trimToggle=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=state.busy;
+      toggle.onchange=()=>{ref.trimEnabled=toggle.checked;if(ref.trimEnabled&&!ref.trimDuration)ref.trimDuration=Math.min(15,ref.localDuration||15);renderRefs();saveDraft();};
+      trimToggle.append(toggle,document.createTextNode(" Trim this video to a selected range"));trim.append(trimToggle);
+      if(ref.trimEnabled){const range=document.createElement("div");range.className="row";for(const [key,label,min,max] of [["trimStart","Start (s)",0,3600],["trimDuration","Use (s)",2,15]]){const wrap=document.createElement("div"),caption=document.createElement("label"),input=document.createElement("input");caption.textContent=label;input.type="number";input.min=min;input.max=max;input.step="0.1";input.setAttribute("aria-label",label+" for @"+ref.alias);input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=state.busy;input.oninput=()=>{ref[key]=Number(input.value);if(key==="trimStart"&&Number.isFinite(ref.trimStart)){try{const video=icon.querySelector("video");if(video)video.currentTime=ref.trimStart;}catch{}}updateRefDurationNotice();saveDraft();};wrap.append(caption,input);range.append(wrap);}trim.append(range);}
+      const fitLabel=document.createElement("label"),fit=document.createElement("input");fit.type="checkbox";fit.checked=ref.fitVideo!==false;fit.disabled=state.busy;fit.onchange=()=>{ref.fitVideo=fit.checked;saveDraft();};fitLabel.append(fit,document.createTextNode(" Auto fit oversized video to 1920×1080"));trim.append(fitLabel);card.append(trim);
       const guidance=document.createElement("div");guidance.className="tip video-guidance";
       guidance.textContent=ref.role==="whole scene"
         ?"Guided remake: H3 generates a new video and may change other details. This is not a one-element edit or a frame-locked copy."
@@ -469,7 +486,7 @@ function renderRefs() {
         if(state.refs.filter(item=>item.kind==="audio"||item.kind==="video"&&item.useAudio).length>3){
           ref.useAudio=false;check.checked=false;info("H3 accepts at most three audio references, including video soundtracks.",true);
         }
-        renderEstimates();
+        updateRefDurationNotice();renderEstimates();
       };
       sound.append(check,document.createTextNode(" Also use this video's soundtrack"));card.append(sound);
     }
@@ -498,8 +515,13 @@ $("refFile").onchange=()=>{
     $("refFile").value="";
     info("This "+kind+" file is empty, unsupported, or above the upload size limit.",true);return;
   }
-  state.refs.push({kind,file,alias:aliasName(file.name),role:{image:"character identity",video:"motion",audio:"voice"}[kind],useAudio:false,meta:null,
+  state.refs.push({kind,file,alias:aliasName(file.name),role:{image:"character identity",video:"motion",audio:"voice"}[kind],useAudio:false,meta:null,trimEnabled:false,trimStart:0,trimDuration:15,fitVideo:true,
     previewUrl:kind==="audio"?null:URL.createObjectURL(file)});
+  if(kind==="audio"){
+    const ref=state.refs[state.refs.length-1],url=URL.createObjectURL(file),probe=document.createElement("audio");probe.preload="metadata";probe.src=url;
+    probe.onloadedmetadata=()=>{if(Number.isFinite(probe.duration)&&probe.duration>0)ref.localDuration=probe.duration;URL.revokeObjectURL(url);renderRefs();};
+    probe.onerror=()=>URL.revokeObjectURL(url);
+  }
   $("refFile").value="";renderRefs();renderEstimates();info("");saveDraft();
 };
 
@@ -733,19 +755,20 @@ function setBusy(value) {
   state.busy=value;
   $("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);
   document.querySelectorAll(".mode").forEach(b=>b.disabled=value);
-  for(const id of ["prompt","duration","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod"])$(id).disabled=value;
+  for(const id of ["prompt","duration","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod","fitImages","fitFrames"])$(id).disabled=value;
   document.querySelectorAll("#stepPresets button").forEach(button=>button.disabled=value);
   updateCapabilities();
   renderLoras();renderRefs();renderEstimates();
 }
-function uploadOne(file,kind,onProgress=()=>{},onSent=()=>{}) {
+function uploadOne(file,kind,onProgress=()=>{},onSent=()=>{},options={}) {
   return new Promise((resolve,reject)=>{
     const data=new FormData();data.append("file",file);
     const xhr=new XMLHttpRequest();
     const signal=state.abortController?.signal;
     const abort=()=>xhr.abort();
     const finish=()=>signal?.removeEventListener("abort",abort);
-    xhr.open("POST",api("/h3_studio/upload_ref?kind="+encodeURIComponent(kind)));
+    const query=new URLSearchParams({kind});if(options.resize)query.set("resize","1");if(kind==="video"&&options.trimEnabled){query.set("trim_start",String(options.trimStart||0));query.set("trim_duration",String(options.trimDuration));}
+    xhr.open("POST",api("/h3_studio/upload_ref?"+query));
     xhr.responseType="json";
     xhr.upload.onprogress=event=>onProgress(Math.min(event.loaded,file.size),file.size);
     xhr.upload.onload=onSent;
@@ -933,6 +956,7 @@ async function checkConnection() {
       const data=await stats.json(),ready=await readiness.json();
       state.modelsReady=ready.models||{};
       state.nodesReady=ready.nodes||null;
+      state.ramLimit=Number(ready.system_ram_limit_gb)||null;
       if(!state.nodesReady)throw Error("Update H3 Higgsfield to check the installed ComfyUI nodes.");
       if(!ready.quality?.h3_vae_tile_fix)throw Error("Update ComfyUI: the H3 VAE quality fix is missing.");
       state.gpu=data.devices?.[0]?.name||"unknown";
@@ -1007,6 +1031,23 @@ async function generate() {
     }
     if(state.mode==="refs"&&state.refs.filter(ref=>ref.kind==="audio"||ref.kind==="video"&&ref.useAudio).length>3)
       throw Error("H3 accepts at most three audio references, including video soundtracks.");
+    if(state.mode==="refs"){
+      const selected=state.refs.filter(ref=>ref.kind==="audio"||ref.kind==="video"&&ref.useAudio);
+      const lengths=selected.map(ref=>Number(ref.kind==="video"&&ref.trimEnabled?ref.trimDuration:ref.meta?.duration||ref.localDuration));
+      if(lengths.length&&lengths.every(value=>Number.isFinite(value)&&value>0)&&lengths.reduce((sum,value)=>sum+value,0)>15.1)
+        throw Error("Selected audio references and video soundtracks exceed 15 seconds combined. Shorten or deselect one before generating.");
+    }
+    if(state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280)
+      throw Error("This full-length Ref2VA setting exhausted this server's system RAM during video decoding. Use a server with more RAM (64 GB recommended) to keep this quality setting.");
+    for(const ref of state.refs.filter(item=>item.kind==="video")){
+      const source=Number(ref.localDuration||ref.meta?.source_duration||0);
+      if(ref.trimEnabled){
+        const start=Number(ref.trimStart),length=Number(ref.trimDuration);
+        if(!Number.isFinite(start)||start<0||!Number.isFinite(length)||length<2||length>15)
+          throw Error(`@${ref.alias}: trim start must be 0 or more and selected length 2–15 seconds.`);
+        if(source&&start+length>source+.1)throw Error(`@${ref.alias}: trim range extends beyond the ${source.toFixed(2)} s source.`);
+      }else if(source>15.1)throw Error(`@${ref.alias}: source is ${source.toFixed(2)} s. Enable Trim and select 2–15 seconds.`);
+    }
     const selectedLoras=state.loras.filter(item=>item.enabled).map(item=>item.name);
     const selectedMethod=method();
     settings=captureSettings();
@@ -1036,7 +1077,9 @@ async function generate() {
         if(ref&&ref.uploadProgress!==pct){ref.uploadProgress=pct;renderRefs();}
       };
       progress(0,file.size);
-      const result=await uploadOne(file,kind,progress,()=>uploadMessage("Checking "+label+" on the server · converting to 24 fps if needed",100));
+      const options={resize:kind==="image"?(state.mode==="frames"?$("fitFrames").checked:$("fitImages").checked):kind==="video"&&ref?.fitVideo!==false,
+        trimEnabled:kind==="video"&&!!ref?.trimEnabled,trimStart:ref?.trimStart||0,trimDuration:ref?.trimDuration};
+      const result=await uploadOne(file,kind,progress,()=>uploadMessage("Checking "+label+" on the server · converting to 24 fps if needed",100),options);
       uploadMessage("Uploaded "+index+" of "+totalFiles+" · "+label+" · "+fmtBytes(file.size)+" · checked on server",100);
       if(ref){ref.uploadProgress=undefined;ref.uploadReady=true;renderRefs();}
       return result;

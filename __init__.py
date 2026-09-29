@@ -240,12 +240,20 @@ def _safe_input_path(filename):
                    INPUT_PREFIX, INPUT_EXTS)
 
 
-async def _normalize_reference_video(source, target):
-    """Convert a short reference to constant 24 fps without changing playback speed."""
+async def _normalize_reference_video(source, target, trim_start=0.0, trim_duration=None, fit=False):
+    """Convert, optionally trim and fit a reference without changing playback speed."""
+    filters = []
+    if fit:
+        filters.extend(("scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease",
+                        "scale=trunc(iw/2)*2:trunc(ih/2)*2"))
+    filters.append("fps=24")
     command = [
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", source, "-map", "0:v:0", "-map", "0:a:0?",
-        "-vf", "fps=24", "-c:v", "libx264", "-preset", "veryfast",
+        "-i", source,
+        *(["-ss", str(trim_start)] if trim_start else []),
+        *(["-t", str(trim_duration)] if trim_duration is not None else []),
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "veryfast",
         "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac",
         "-b:a", "192k", "-movflags", "+faststart", target,
     ]
@@ -283,6 +291,19 @@ async def upload_ref(request):
     kind = request.query.get("kind", "")
     if kind not in kinds:
         return web.json_response({"error": "Invalid reference type."}, status=400)
+    try:
+        trim_start = float(request.query.get("trim_start", "0"))
+        raw_duration = request.query.get("trim_duration")
+        trim_duration = float(raw_duration) if raw_duration is not None else None
+        resize = request.query.get("resize", "0") == "1"
+        if not math.isfinite(trim_start) or not 0 <= trim_start <= 3600:
+            raise ValueError("Invalid trim start.")
+        if trim_duration is not None and (not math.isfinite(trim_duration) or not 2 <= trim_duration <= 15):
+            raise ValueError("Trim length must be 2–15 seconds.")
+        if kind != "video" and (trim_start or trim_duration is not None):
+            raise ValueError("Trimming is available for video references only.")
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     reader = await request.multipart()
     part = await reader.next()
     if not part or part.name != "file":
@@ -309,11 +330,23 @@ async def upload_ref(request):
             raise ValueError("Reference file is empty.")
         info = {"kind": kind, "size": size}
         if kind == "image":
-            from PIL import Image
+            from PIL import Image, ImageOps
             with Image.open(path) as picture:
-                if picture.width * picture.height > 50_000_000:
+                if picture.width * picture.height > 50_000_000 and not resize:
                     raise ValueError("Reference image is too large (50 megapixel limit).")
                 picture.verify()
+            if resize:
+                with Image.open(path) as original:
+                    if original.width * original.height > 100_000_000:
+                        raise ValueError("Reference image exceeds the safe decode limit.")
+                    picture = ImageOps.exif_transpose(original)
+                    changed = max(picture.size) > 2048
+                    if changed:
+                        picture.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                        if ext in {".jpg", ".jpeg"} and picture.mode not in {"RGB", "L"}:
+                            picture = picture.convert("RGB")
+                        picture.save(path)
+                    info.update(width=picture.width, height=picture.height, resized=changed)
         else:
             import av
             with av.open(path) as media:
@@ -327,11 +360,16 @@ async def upload_ref(request):
                         duration = stream.frames / fps
                     if not duration and fps:
                         duration = sum(1 for _ in media.decode(stream)) / fps
-                    if stream.width * stream.height > 1920 * 1080:
-                        raise ValueError("Reference video is too large; resize it to 1920x1080 or smaller.")
-                    if not 1.9 <= duration <= 15.1:
-                        raise ValueError("H3 reference videos must be 2–15 seconds long.")
-                    info.update(duration=round(duration, 2), fps=round(fps, 2), has_audio=bool(media.streams.audio))
+                    too_large = stream.width > 1920 or stream.height > 1080
+                    if too_large and not resize:
+                        raise ValueError("Reference video is too large; enable resize to fit 1920x1080.")
+                    if trim_duration is not None:
+                        if duration and trim_start + trim_duration > duration + .1:
+                            raise ValueError("Trim range extends beyond the source video.")
+                    elif not 1.9 <= duration <= 15.1:
+                        raise ValueError("H3 reference videos must be 2–15 seconds long. Select a 2–15 second trim.")
+                    info.update(duration=round(duration, 2), fps=round(fps, 2), has_audio=bool(media.streams.audio),
+                                source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height)
                 else:
                     if not media.streams.audio:
                         raise ValueError("This file has no audio stream.")
@@ -342,11 +380,13 @@ async def upload_ref(request):
                     if not 1.9 <= duration <= 15.1:
                         raise ValueError("H3 reference audio must be 2–15 seconds long.")
                     info["duration"] = round(duration, 2)
-        if kind == "video" and abs(info["fps"] - 24) > 0.02:
+        if kind == "video" and (abs(info["fps"] - 24) > 0.02 or trim_duration is not None or trim_start or
+                                resize and (info["source_width"] > 1920 or info["source_height"] > 1080)):
             original_fps = info["fps"]
             normalized_name = f"{INPUT_PREFIX}_{uuid.uuid4().hex}.mp4"
             normalized_path = _safe_input_path(normalized_name)
-            await _normalize_reference_video(path, normalized_path)
+            await _normalize_reference_video(path, normalized_path, trim_start, trim_duration,
+                                             resize and (info["source_width"] > 1920 or info["source_height"] > 1080))
             if os.path.getsize(normalized_path) > limits["video"]:
                 raise ValueError("The 24 fps reference video is too large.")
             with av.open(normalized_path) as normalized:
@@ -354,12 +394,14 @@ async def upload_ref(request):
                 fps = float(stream.average_rate or 0)
                 duration = (float(stream.duration * stream.time_base)
                             if stream.duration else float(normalized.duration or 0) / 1000000)
-                if abs(fps - 24) > 0.02 or not 1.9 <= duration <= 15.1:
+                if abs(fps - 24) > 0.02 or not 1.9 <= duration <= 15.1 or stream.width > 1920 or stream.height > 1080:
                     raise ValueError("The converted video did not meet H3's 24 fps and duration limits.")
                 info.update(duration=round(duration, 2), fps=round(fps, 2),
                             has_audio=bool(normalized.streams.audio),
-                            normalized_from_fps=original_fps,
-                            size=os.path.getsize(normalized_path))
+                            normalized_from_fps=original_fps if abs(original_fps - 24) > .02 else None,
+                            size=os.path.getsize(normalized_path),
+                            resized=stream.width != info["source_width"] or stream.height != info["source_height"],
+                            trim_start=trim_start, trimmed=trim_duration is not None)
             os.unlink(path)
             path, name = normalized_path, normalized_name
             normalized_path = None
@@ -678,8 +720,16 @@ async def readiness(request):
         vae_tile_fix = "strip[..., :, x_idx[j]:x_idx[j] + x_len[j]]" in vae_source.read_text(encoding="utf-8")
     except OSError:
         vae_tile_fix = False
+    ram_limit = None
+    try:
+        raw = pathlib.Path("/sys/fs/cgroup/memory.max").read_text(encoding="ascii").strip()
+        if raw.isdigit():
+            ram_limit = round(int(raw) / (1024 ** 3), 2)
+    except OSError:
+        pass
     return web.json_response({"models": present, "nodes": available,
-                              "quality": {"h3_vae_tile_fix": vae_tile_fix}})
+                              "quality": {"h3_vae_tile_fix": vae_tile_fix},
+                              "system_ram_limit_gb": ram_limit})
 
 
 @PromptServer.instance.routes.get("/h3_studio/job_progress")
@@ -692,7 +742,7 @@ async def job_progress(request):
     registry = get_progress_state()
     if registry.prompt_id != prompt_id:
         return web.json_response({"prompt_id": prompt_id, "step": None, "total": None})
-    sampler = registry.nodes.get("8")
+    sampler = registry.nodes.get("8") or registry.nodes.get("sampler")
     if not sampler:
         return web.json_response({"prompt_id": prompt_id, "step": None, "total": None})
     return web.json_response({
