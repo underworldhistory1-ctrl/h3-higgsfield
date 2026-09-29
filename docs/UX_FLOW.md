@@ -14,11 +14,15 @@ Each mode keeps a separate prompt draft when switching tabs. The server readines
 
 Image reference mentions become `<Subject N>` and are tied to `<Picture N>` in the six-section Ref2VA prompt. Video and audio mentions become `<Video N>` and `<Audio N>`; a selected video soundtrack gets the matching paired audio input and its own audio tag. Reference order is images, videos, then standalone audio. A selected soundtrack counts toward the conservative three-audio-reference and 15-second combined audio limits. Frame mode uses the MiniMax first/last alignment line and the three-section base prompt schema.
 
+Every attached reference card has an Insert button for its `@name`. Prompt chips are visible as soon as the files are attached, even before a mention is typed. Frame uploads provide `@start` and `@end` chips. Qwen Image has one creation workspace with optional named image references; its prompt mentions resolve to the matching `<imageN>` graph inputs.
+
 ## Model and LoRA choices
 
 The output canvas is an actual H3 Base dimension. Changing duration, canvas, steps, method, mode, references, or reference image detail updates every size estimate. No LoRA or accelerator is enabled on first connection. The Render method selector offers Original quality, Spectrum, MotionCache, and the pinned H3 Turbo LoRA; the latter three stay disabled unless their exact node or adapter is installed. Spectrum and MotionCache insert an exclusive patch after Sigma Shift. Turbo inserts the installed FL2VA model-only LoRA at strength 0.9 and sets six steps in Text/Frames only; References uses Ref2VA, so this Turbo choice is disabled there. It cannot be combined with another LoRA until validated. Installed style LoRAs are listed from ComfyUI; enabling one inserts `LoraLoaderModelOnly` between the H3 model loader and sampler. The toggle is unavailable if that node is absent. Multiple enabled LoRAs are applied in displayed order, each at its selected strength. An obvious FL2VA/Ref2VA filename mismatch is stopped before submission; Combat V2 is restricted to FL2VA modes and Realism People requires its trigger word in the user's prompt. Other compatibility is unknown until tested on the server.
 
 The default 20-step graph does not use Turbo, cache, or sparse attention. Max reference image detail is the References default for identity fidelity; it does not raise output resolution. The 2K regeneration model is not part of this local bundle.
+
+Duration is a seconds input from 5 to 15.1. The UI converts the request to the nearest supported 24 fps `17k+5` frame count in the trained 124–362-frame range and displays the actual duration before submission. The same frame count feeds the H3 graph, estimates, and saved settings. On sub-48 GB system-RAM hosts, the UI blocks the exact 362-frame Ref2VA high-resolution combination that previously exhausted RAM during decoding; shorter combinations remain unverified rather than guaranteed safe.
 
 ## Generation and results
 

@@ -28,7 +28,7 @@ The published MP4s retain their video and audio streams; private prompt metadata
 
 ## What you get
 
-The top navigation separates **Video** and **Image**. Video retains the complete H3 workflow below. Image provides a separate Create/Edit workspace, 1–10 photo inputs, INT8/BF16 availability checks, native aspect presets up to 4 MP, transparency, queue/progress recovery, output details, download, and deletion.
+The top navigation separates **Video** and **Image**. Video retains the complete H3 workflow below. Image uses one creation workspace with optional named references (up to 10 images), INT8/BF16 availability checks, native aspect presets up to 4 MP, transparency, queue/progress recovery, output details, download, and deletion.
 
 | Mode | Input | H3 path |
 | --- | --- | --- |
@@ -36,9 +36,11 @@ The top navigation separates **Video** and **Image**. Video retains the complete
 | Frames | Prompt + start and/or end image | FL2VA |
 | References | Prompt + named images, videos, or audio (`@name`) | Ref2VA |
 
-- A single English UI for prompts, output size, duration, steps, render method, and optional LoRAs.
+- A single English UI for prompts, output size, duration, steps, render method, and optional LoRAs. Enter a duration from 5 to 15.1 seconds; Studio shows the nearest H3-supported frame count and actual duration before submission.
+- Attached references have an **Insert @name into prompt** button. The video workspace also shows named image, video, and audio references next to the prompt; start/end frames appear there as `@start` and `@end`.
 - Video references at other frame rates are converted to **24 fps** on upload; their playback speed and available soundtrack are retained. H3's combined video-reference limit is 15 seconds.
 - Original quality by default. Spectrum, MotionCache, and the FL2VA Turbo LoRA are prepared as separate, optional choices; they can change the result. Installed LoRAs appear as optional switches.
+- Spectrum and MotionCache are selectable in References when their nodes are installed. The prepared Turbo LoRA targets FL2VA, so it is selectable only in Text and Frames.
 - Native video and audio come from the same H3 sample. Audio is checked after saving; listening remains the final check.
 - The H3 save node writes MP4 with H.264 and AAC; if PyAV fails to encode, it retries through the installed FFmpeg without rerunning the model.
 - Upload and render progress, a changing time estimate, a queue, thumbnails, saved settings for each clip, and a library that survives page refreshes.
@@ -84,7 +86,9 @@ The repository includes a dedicated RTX 5090 image in `Dockerfile.salad`. It kee
 
 ## What has been verified
 
-On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. New installs require the upstream H3 VAE tile fix before the UI permits generation. Qwen's graphs match the pinned ComfyUI 2.1 schemas and the source project's graph contract; its real RTX 5090 render remains the first live check after allocating the new server.
+On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. New installs require the upstream H3 VAE tile fix before the UI permits generation. Qwen's graphs match the pinned ComfyUI 2.1 schemas and the source project's graph contract.
+
+On one 39 GB system-RAM RTX 5090 workspace, a 15.1-second 1280×704 Ref2VA render exhausted system RAM during video decoding after sampling completed. The UI blocks that known failing combination on sub-48 GB hosts. This does not measure the GPU's 32 GB VRAM; for that full-length setting, 64 GB system RAM is recommended, pending a successful validation render.
 
 Qwen Image 2.1 weights use the Qwen Research License and are not licensed for commercial use. They are downloaded at runtime and are not redistributed by this repository.
 
