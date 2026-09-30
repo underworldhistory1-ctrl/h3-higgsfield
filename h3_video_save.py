@@ -38,15 +38,23 @@ class H3ReleaseForDecode:
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / f"h3_studio_{token}.safetensors"
         part = folder / f"h3_studio_{token}.part"
+        import comfy.model_management as model_management
+        model_management.unload_all_models()
+        model_management.soft_empty_cache()
+        sampled = samples["samples"]
+        if getattr(sampled, "is_nested", False):
+            tensors = {f"nested_{index}": tensor.detach().to("cpu").contiguous()
+                       for index, tensor in enumerate(sampled.unbind())}
+            if not tensors:
+                raise ValueError("H3 returned an empty nested latent")
+        else:
+            tensors = {"samples": sampled.detach().to("cpu").contiguous()}
         try:
-            save_file({"samples": samples["samples"].detach().to("cpu").contiguous()}, str(part))
+            save_file(tensors, str(part))
             os.replace(part, target)
         finally:
             part.unlink(missing_ok=True)
 
-        import comfy.model_management as model_management
-        model_management.unload_all_models()
-        model_management.soft_empty_cache()
         logging.info("H3 Studio: sampled latent saved at %s; generation models released before VAE decode", target)
         return (samples,)
 
@@ -68,7 +76,17 @@ class H3LoadSavedLatent:
         path = pathlib.Path(folder_paths.get_output_directory()) / "latent" / f"h3_studio_{token}.safetensors"
         if not path.is_file():
             raise FileNotFoundError(f"No sampled H3 latent for {token}")
-        return ({"samples": load_file(str(path), device="cpu")["samples"]},)
+        tensors = load_file(str(path), device="cpu")
+        if "samples" in tensors:
+            sampled = tensors["samples"]
+        else:
+            indices = sorted(int(key.removeprefix("nested_")) for key in tensors
+                             if re.fullmatch(r"nested_\d+", key))
+            if not indices or indices != list(range(len(indices))):
+                raise ValueError("Saved H3 nested latent is incomplete")
+            from comfy.nested_tensor import NestedTensor
+            sampled = NestedTensor([tensors[f"nested_{index}"] for index in indices])
+        return ({"samples": sampled},)
 
 
 def _streams_ok(path):
