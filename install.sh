@@ -169,10 +169,21 @@ if ((AUTO_START == 0)); then
     exit 0
 fi
 
+COMFY_START_ARGS=()
+ram_limit_file=/sys/fs/cgroup/memory.max
+if [[ -r "$ram_limit_file" ]]; then
+    read -r ram_limit_bytes < "$ram_limit_file"
+    if [[ "$ram_limit_bytes" =~ ^[0-9]+$ ]] && ((ram_limit_bytes < 56 * 1024 * 1024 * 1024)); then
+        COMFY_START_ARGS+=(--cache-none --fp16-intermediates)
+        echo "Low system RAM detected: disabling intermediate cache and using FP16 intermediate frames."
+    fi
+fi
+
 status="$(python3 "$ROOT/deploy/activate_h3.py" check --url "$SERVER_URL")"
 if [[ "$status" == "COMFYUI_OFFLINE" ]]; then
     echo "Starting ComfyUI with H3 Higgsfield as its landing page..."
     (cd "$COMFY_ROOT" && nohup "$H3_PYTHON" main.py --listen "$BIND" --port "$PORT" \
+        "${COMFY_START_ARGS[@]}" \
         > "$COMFY_ROOT/h3-higgsfield-server.log" 2>&1 < /dev/null & echo $! > "$COMFY_ROOT/.h3-higgsfield-server.pid")
     python3 "$ROOT/deploy/activate_h3.py" wait --url "$SERVER_URL" --timeout 240
 else

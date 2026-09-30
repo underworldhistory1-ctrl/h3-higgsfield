@@ -748,8 +748,9 @@ function graph(prompt,uploads,token) {
     "6":{class_type:refs?"MiniMaxH3ReferenceToVideo":"MiniMaxH3ImageToVideo",inputs:{clip:["3",0],vae:["4",0],prompt,width:state.width,height:state.height,length:Number($("duration").value)}},
     "7":{class_type:"ConditioningZeroOut",inputs:{conditioning:["6",0]}},
     "8":{class_type:"KSampler",inputs:{model:["2",0],seed:Number($("seed").value),steps:Number($("steps").value),cfg:1,sampler_name:"res_multistep",scheduler:"simple",positive:["6",0],negative:["7",0],latent_image:["6",1],denoise:1}},
-    "9":{class_type:"VAEDecode",inputs:{samples:["8",0],vae:["4",0]}},
-    "10":{class_type:"VAEDecodeAudio",inputs:{samples:["8",0],vae:["5",0]}},
+    "13":{class_type:"H3ReleaseForDecode",inputs:{samples:["8",0],token}},
+    "9":{class_type:"VAEDecode",inputs:{samples:["13",0],vae:["4",0]}},
+    "10":{class_type:"VAEDecodeAudio",inputs:{samples:["13",0],vae:["5",0]}},
     "11":{class_type:"CreateVideo",inputs:{images:["9",0],fps:24,audio:["10",0]}},
     "12":{class_type:"H3SaveVideo",inputs:{video:["11",0],filename_prefix:"video/h3_studio_"+token}},
   };
@@ -1030,7 +1031,7 @@ async function checkConnection() {
       await loadLoras();
       const required=state.mode==="refs"?["ref2va","text_encoder","video_vae","audio_vae"]:["fl2va","text_encoder","video_vae","audio_vae"];
       const missing=required.filter(name=>!state.modelsReady[name]);
-      const baseNodes=["UNETLoader","MiniMaxH3SigmaShift","CLIPLoader","VAELoader","ConditioningZeroOut","KSampler","VAEDecode","VAEDecodeAudio","CreateVideo","H3SaveVideo"];
+      const baseNodes=["UNETLoader","MiniMaxH3SigmaShift","CLIPLoader","VAELoader","ConditioningZeroOut","KSampler","H3ReleaseForDecode","VAEDecode","VAEDecodeAudio","CreateVideo","H3SaveVideo"];
       const modeNodes=state.mode==="refs"?["MiniMaxH3ReferenceToVideo"]:["MiniMaxH3ImageToVideo"];
       if(state.mode==="frames")modeNodes.push("LoadImage");
       if(state.mode==="refs"){

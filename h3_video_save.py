@@ -8,11 +8,67 @@ import shutil
 import subprocess
 import tempfile
 import wave
+import re
 
 import folder_paths
 import av
 import numpy as np
 import torch
+from safetensors.torch import load_file, save_file
+
+
+class H3ReleaseForDecode:
+    """Checkpoint the sampled latent and evict generation models before video decode."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "samples": ("LATENT",),
+            "token": ("STRING", {"default": ""}),
+        }}
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "release"
+    CATEGORY = "H3 Studio"
+
+    def release(self, samples, token):
+        if not re.fullmatch(r"[a-f0-9]{12}", token):
+            raise ValueError("Invalid H3 render token")
+        folder = pathlib.Path(folder_paths.get_output_directory()) / "latent"
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / f"h3_studio_{token}.safetensors"
+        part = folder / f"h3_studio_{token}.part"
+        try:
+            save_file({"samples": samples["samples"].detach().to("cpu").contiguous()}, str(part))
+            os.replace(part, target)
+        finally:
+            part.unlink(missing_ok=True)
+
+        import comfy.model_management as model_management
+        model_management.unload_all_models()
+        model_management.soft_empty_cache()
+        logging.info("H3 Studio: sampled latent saved at %s; generation models released before VAE decode", target)
+        return (samples,)
+
+
+class H3LoadSavedLatent:
+    """Load a completed sampler checkpoint for a decode-only recovery prompt."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"token": ("STRING", {"default": ""})}}
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "load"
+    CATEGORY = "H3 Studio"
+
+    def load(self, token):
+        if not re.fullmatch(r"[a-f0-9]{12}", token):
+            raise ValueError("Invalid H3 render token")
+        path = pathlib.Path(folder_paths.get_output_directory()) / "latent" / f"h3_studio_{token}.safetensors"
+        if not path.is_file():
+            raise FileNotFoundError(f"No sampled H3 latent for {token}")
+        return ({"samples": load_file(str(path), device="cpu")["samples"]},)
 
 
 def _streams_ok(path):
@@ -151,5 +207,9 @@ class H3SaveVideo:
         finally:
             native_part.unlink(missing_ok=True)
             ffmpeg_part.unlink(missing_ok=True)
+        match = re.search(r"h3_studio_([a-f0-9]{12})$", filename_prefix)
+        if match:
+            checkpoint = pathlib.Path(folder_paths.get_output_directory()) / "latent" / f"h3_studio_{match.group(1)}.safetensors"
+            checkpoint.unlink(missing_ok=True)
         file_info = {"filename": filename, "subfolder": subfolder, "type": "output"}
         return {"ui": {"videos": [file_info]}, "result": ()}

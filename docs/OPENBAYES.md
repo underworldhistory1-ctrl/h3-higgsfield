@@ -55,10 +55,22 @@ Video VAE decoding of a 362-frame, 1280×704 Ref2VA render after completing
 20 sampling steps. A second 345-frame, 1280×704 MotionCache render completed
 20 sampling steps in 50 minutes and was killed during Video VAE decoding.
 `memory.events` recorded an `oom_kill`, and no output was saved. This is system
-RAM, not the RTX 5090's VRAM. Choose at least 64 GB advertised system RAM for
-long Ref2VA at this canvas. Studio blocks 294 frames and longer on hosts that
-report under 56 GB of system RAM, rather than silently lowering quality or
-wasting another long render. Shorter combinations remain unverified.
+RAM, not the RTX 5090's VRAM. A later 362-frame MotionCache run on the 40 GB
+workspace again completed all 26 sampler calls in about 23 minutes, then hit
+`oom_kill` while loading the Video VAE. Studio warns but does not block this
+combination. On hosts with under 56 GiB cgroup RAM, the installer starts
+ComfyUI with `--cache-none --fp16-intermediates` to reduce retained node state
+and halve intermediate frame buffers. This is a mitigation, not a confirmed
+successful full-length render. Choose at least 64 GB advertised system RAM
+for the more reliable long Ref2VA path; shorter or smaller combinations remain
+unverified on the 40 GB host.
+The Studio graph also saves the sampled latent under `ComfyUI/output/latent/`
+and releases generation models before audio/video VAE decoding. On success,
+the checkpoint is removed after MP4 save; on a decode failure it remains for a
+decode-only recovery using `H3LoadSavedLatent`, both VAE loaders,
+`VAEDecode`/`VAEDecodeAudio`, `CreateVideo`, and `H3SaveVideo`. The previous
+OOM happened before this checkpoint node was installed, so that run cannot
+be decoded without sampling again.
 The observed sampler alone took about 88 minutes (~264 seconds per step), so
 the initial uncalibrated ETA on that host was too optimistic. A successful
 completed render is needed before Studio can calibrate its saved timing.

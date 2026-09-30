@@ -27,7 +27,7 @@ from aiohttp import web
 
 import folder_paths
 from server import PromptServer
-from .h3_video_save import H3SaveVideo
+from .h3_video_save import H3LoadSavedLatent, H3ReleaseForDecode, H3SaveVideo
 from .qwen_image import (
     NODE_CLASS_MAPPINGS as QWEN_NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS as QWEN_NODE_DISPLAY_NAME_MAPPINGS,
@@ -40,8 +40,10 @@ from .qwen_image import (
 )
 
 
-NODE_CLASS_MAPPINGS = {"H3SaveVideo": H3SaveVideo}
-NODE_DISPLAY_NAME_MAPPINGS = {"H3SaveVideo": "H3 Save Video"}
+NODE_CLASS_MAPPINGS = {"H3SaveVideo": H3SaveVideo, "H3ReleaseForDecode": H3ReleaseForDecode,
+                       "H3LoadSavedLatent": H3LoadSavedLatent}
+NODE_DISPLAY_NAME_MAPPINGS = {"H3SaveVideo": "H3 Save Video", "H3ReleaseForDecode": "H3 Release For Decode",
+                              "H3LoadSavedLatent": "H3 Load Saved Latent"}
 NODE_CLASS_MAPPINGS.update(QWEN_NODE_CLASS_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS.update(QWEN_NODE_DISPLAY_NAME_MAPPINGS)
 WEB_DIRECTORY = "./web"
