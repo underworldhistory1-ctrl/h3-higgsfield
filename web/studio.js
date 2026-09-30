@@ -508,7 +508,7 @@ function renderRefs() {
     const roleWrap=document.createElement("div"),roleLabel=document.createElement("label"),role=document.createElement("select");
     roleLabel.textContent="USE AS";
     const options=ref.kind==="image"?
-      [["character identity","Character"],["location","Location"],["visual style","Style"],["object","Object"]]:
+      [["character identity","Character"],["storyboard","Storyboard · shot guide"],["location","Location"],["visual style","Style"],["object","Object"]]:
       ref.kind==="video"?[["motion","Motion"],["motion and camera","Performance + camera"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
       [["voice","Voice"],["music","Music"],["sound effects","Effects"]];
     options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;role.append(o);});
@@ -585,9 +585,9 @@ function mentionItems(){
     return items;
   }
   if(state.mode!=="refs")return [];
-  let image=0,video=0,audio=0;
+  let image=0,subject=0,video=0,audio=0;
   return orderedRefs().map(ref=>({alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,
-    tag:ref.kind==="image"?"Subject "+(++image)+" · Picture "+image:ref.kind==="video"?"Video "+(++video):"Audio "+(++audio),
+    tag:ref.kind==="image"?ref.role==="storyboard"?"Picture "+(++image)+" · Storyboard":"Subject "+(++subject)+" · Picture "+(++image):ref.kind==="video"?"Video "+(++video):"Audio "+(++audio),
     label:ref.kind==="image"?"Image":ref.kind==="video"?"Video":"Audio"}));
 }
 function mentionPreview(item){
@@ -693,10 +693,16 @@ function resolvedPrompt() {
     let tag;
     if(ref.kind==="image"){
       const picture="<Picture "+(++image)+">";
-      tag="<Subject "+(++subject)+">";
-      definitions.push(tag+" is the "+(ref.role||"visual subject")+" shown in "+picture+". Keep its visible defining details.");
-      const retain=ref.role==="visual style"?"attribute_transfer":"fully_preserved";
-      retention.push(tag+": "+retain+" - preserve the defining visual attributes shown in "+picture+" wherever this subject appears in the target sequence.");
+      if(ref.role==="storyboard"){
+        tag=picture;
+        mediaNotes.push(picture+" is a multi-panel storyboard. Read panels left to right, top to bottom as a shot and composition guide; do not render panel borders or labels. Follow explicit shot descriptions when they differ.");
+        retention.push(picture+": attribute_transfer - guide shot order, framing and visual progression; do not treat the sheet as a single visible subject.");
+      }else{
+        tag="<Subject "+(++subject)+">";
+        definitions.push(tag+" is the "+(ref.role||"visual subject")+" shown in "+picture+". Keep its visible defining details.");
+        const retain=ref.role==="visual style"?"attribute_transfer":"fully_preserved";
+        retention.push(tag+": "+retain+" - preserve the defining visual attributes shown in "+picture+" wherever this subject appears in the target sequence.");
+      }
     }
     if(ref.kind==="video"){
       if(ref.useAudio)mediaNotes.push("<Audio "+(++audio)+"> is the soundtrack paired with this reference video.");

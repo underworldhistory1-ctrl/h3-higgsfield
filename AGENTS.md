@@ -20,6 +20,7 @@ The user operates MiniMax H3 through the **English H3 Studio web UI**. ComfyUI n
 6. Original quality (FL2VA for Text/Frames, Ref2VA for References) is the default. The default canvas is 1280×704, 362 frames / 15.1 s, 20 steps, 24 fps, with native audio. Spectrum, MotionCache, Turbo, Realism People, and Combat V2 are prepared but selected only by the user in the UI. Turbo targets FL2VA and stays disabled in References mode. Combat V2 can be selected in References with an experimental Ref2VA notice; its creator tested FL2VA only.
 7. The model weights are **not** bundled: about 63.4 GB must be downloaded once onto a persistent model disk. Never promise a seconds-long install onto an empty disk. The pinned downloader skips verified cached model files on subsequent rentals.
 8. Do not use the nodes editor as the user's main UI. H3 Studio is `/extensions/h3_studio/index.html`; the server root redirects there after login. `/?view=nodes` is for technical work.
+9. In References mode, a multi-panel storyboard image uses the Storyboard role and compiles to `<Picture N>`; character images compile to `<Subject N>`. Both use the native `ref_images` input. This guides shots but does not lock exact frames.
 
 ## Proven scope and limits
 

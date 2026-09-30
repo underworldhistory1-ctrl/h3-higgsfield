@@ -70,7 +70,7 @@
     <div class="ref-add"><select id="refKind" aria-label="Reference type"><option value="image">Image · person / place / look</option><option value="video">Video · motion / scene guide</option><option value="audio">Audio · voice / music</option></select><button class="button alt smallbtn" id="addRef">+ Add</button></div>
     <input type="file" id="refFile" class="file-picker" aria-label="Choose reference file"><div id="refs" class="refs"></div><div id="refDurationNotice" class="tip" aria-live="polite"></div>
     <label style="display:flex;gap:8px;align-items:center"><input id="fitImages" type="checkbox" checked style="width:auto"> Auto fit oversized reference images · 2048 px maximum</label>
-    <div class="tip">Video references guide a new generation. “Whole scene” asks H3 to follow the full clip while changing the detail in your prompt, but cannot preserve every other frame or pixel. Up to 9 images, 3 videos, 3 audio references and 12 files total. A selected video soundtrack counts as audio. Each video/audio: 2–15 s; each type totals 15 s. Trim longer clips below; oversized video can fit within 1920×1080. Frame rates convert to 24 fps after upload.</div>
+    <div class="tip">Video references guide a new generation. “Whole scene” asks H3 to follow the full clip while changing the detail in your prompt, but cannot preserve every other frame or pixel. For a multi-panel shot sheet, select Storyboard and mention it in the prompt. Up to 9 images, 3 videos, 3 audio references and 12 files total. A selected video soundtrack counts as audio. Each video/audio: 2–15 s; each type totals 15 s. Trim longer clips below; oversized video can fit within 1920×1080. Frame rates convert to 24 fps after upload.</div>
     <div class="section"><label for="refSize">REFERENCE IMAGE DETAIL</label><select id="refSize"><option value="max" selected>Max reference detail · up to 2048 px</option><option value="match">Match output canvas · faster</option></select><div class="tip">Max affects reference identity detail, not output resolution, and can be much slower.</div></div>
    </section>
    <section class="panel">
@@ -115,6 +115,6 @@
  </section>
 </main>
 <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle"><div class="settings-head"><h2 id="settingsTitle">Video settings</h2><button id="settingsClose" class="button alt smallbtn" type="button" aria-label="Close settings">✕ Close</button></div><div id="settingsContent"></div></dialog>
-<script src="./studio.js?v=20260930-combat-ref2va-1"></script>
+<script src="./studio.js?v=20260930-storyboard-combat-1"></script>
 </body>
 </html>
