@@ -16,12 +16,13 @@ const state = {
   queueMissingSince: null,
   serverMissingSince: null,
 };
-const sizes = [
+const landscapeSizes = [
   [1344,768,"Native detail"],
   [1280,704,"Near 720p"],
   [1024,576,"Compact"],
   [864,480,"Draft"],
 ];
+const sizes = landscapeSizes.flatMap(([w,h,label])=>[[w,h,label],[h,w,label]]);
 const maxRefs = {image:9,video:3,audio:3};
 const mediaRules={
   image:{ext:/\.(png|jpe?g|webp)$/i,max:25*1024*1024},
@@ -49,7 +50,7 @@ sessionStorage.setItem("h3studio.client.id.v1",state.clientId);
 const api = path => (localStorage.getItem(baseKey) || "").replace(/\/$/,"") + path;
 const seconds = () => Number($("duration").value) / 24;
 const refMemoryRisk = () => state.ramLimit && state.ramLimit < 56 && state.mode === "refs"
-  && state.width >= 1280 && Number($("duration").value) >= 294;
+  && state.width*state.height >= 1280*704 && Number($("duration").value) >= 294;
 function durationFrames(requestedSeconds){
   const step=Math.round((requestedSeconds*24-124)/17);
   return 124+17*Math.max(0,Math.min(14,step));
@@ -308,7 +309,13 @@ function estimateFor(w=state.width,h=state.height) {
 function renderEstimates() {
   const wrap = $("estimates");
   wrap.replaceChildren();
-  sizes.forEach(([w,h,label]) => {
+  const portrait=state.height>state.width;
+  for(const [id,pressed] of [["aspectLandscape",!portrait],["aspectPortrait",portrait]]){
+    $(id).setAttribute("aria-pressed",String(pressed));
+    $(id).classList.toggle("selected",pressed);
+    $(id).disabled=state.busy;
+  }
+  sizes.filter(([w,h])=>(h>w)===portrait).forEach(([w,h,label]) => {
     const est = estimateFor(w,h);
     const b = document.createElement("button");
     b.className = "estrow" + (w===state.width && h===state.height ? " selected":"");
@@ -415,6 +422,15 @@ function aliasName(fileName) {
   while(state.refs.some(r=>r.alias===unique)) {const suffix="_"+i++;unique=name.slice(0,32-suffix.length)+suffix;}
   return unique;
 }
+function setAspect(portrait){
+  if(state.busy)return;
+  const chosen=landscapeSizes.find(([w,h])=>(state.width===w&&state.height===h)||(state.width===h&&state.height===w))||landscapeSizes[1];
+  state.width=portrait?chosen[1]:chosen[0];
+  state.height=portrait?chosen[0]:chosen[1];
+  renderEstimates();saveDraft();
+}
+$("aspectLandscape").onclick=()=>setAspect(false);
+$("aspectPortrait").onclick=()=>setAspect(true);
 function fitReferenceTrim(ref) {
   const source=Number(ref.meta?.source_duration||ref.localDuration||0);
   const start=Number(ref.trimStart);

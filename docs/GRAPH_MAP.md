@@ -17,7 +17,7 @@ The user-facing app is `web/index.html` + `web/studio.js`. Keep these files byte
 | 11 | `CreateVideo` | The decoded video frames plus decoded native audio, 24 fps |
 | 12 | `H3SaveVideo` | MP4/H.264 with audio; retries through FFmpeg if PyAV fails, prefix `video/h3_studio_<token>` |
 
-The Original method uses 20 steps by default with `res_multistep`, `simple`, CFG 1, denoise 1. The UI offers 124/175/226/294/362 frames, canvas sizes 1344×768, 1280×704, 1024×576, 864×480, and a practical 20–100 step input. The Turbo path uses 4–8 steps, default 6.
+The Original method uses 20 steps by default with `res_multistep`, `simple`, CFG 1, denoise 1. The UI offers 124/175/226/294/362 frames and a practical 20–100 step input. Landscape canvas choices are 1344×768, 1280×704, 1024×576, and 864×480; Portrait transposes each pair (768×1344, 704×1280, 576×1024, 480×864). Node 6 receives the selected width and height directly in all three modes. The ratios are approximate because dimensions use H3-friendly multiples. The Turbo path uses 4–8 steps, default 6.
 
 ## Mode branches
 
