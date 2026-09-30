@@ -14,6 +14,7 @@ const state = {
   nodesReady: null,
   phaseEtaAt: null,
   queueMissingSince: null,
+  serverMissingSince: null,
 };
 const sizes = [
   [1344,768,"Native detail"],
@@ -47,6 +48,8 @@ sessionStorage.setItem(sessionIdKey,sessionId);
 sessionStorage.setItem("h3studio.client.id.v1",state.clientId);
 const api = path => (localStorage.getItem(baseKey) || "").replace(/\/$/,"") + path;
 const seconds = () => Number($("duration").value) / 24;
+const refMemoryRisk = () => state.ramLimit && state.ramLimit < 56 && state.mode === "refs"
+  && state.width >= 1280 && Number($("duration").value) >= 294;
 function durationFrames(requestedSeconds){
   const step=Math.round((requestedSeconds*24-124)/17);
   return 124+17*Math.max(0,Math.min(14,step));
@@ -323,9 +326,9 @@ function renderEstimates() {
   state.estimated = estimateFor();
   $("estimateNote").textContent = "Estimated " + sizeKey() + ": " + fmt(state.estimated.low) + " – " + fmt(state.estimated.high);
   $("estimateBasis").textContent = state.estimated.basis + ". Includes model load, video and audio. First run may take longer.";
-  const risk=state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280;
+  const risk=refMemoryRisk();
   $("memoryNotice").classList.toggle("hidden",!risk);
-  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM, separate from the RTX 5090's VRAM. A previous 15.1 s Ref2VA render at 1280×704 ran out of system RAM during video decoding. This exact setting is blocked here to avoid losing another long render. A server with 64 GB system RAM is recommended; shorter renders may use less, but have not been validated here.`:"";
+  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. Long Ref2VA renders at this canvas have finished all sampling steps but exhausted system RAM during video decoding. This setting is blocked to avoid losing another render. Use a server with at least 64 GB system RAM for this length and canvas.`:"";
 }
 function renderLoras() {
   const list=$("loraList");list.replaceChildren();
@@ -1073,8 +1076,8 @@ async function generate() {
       if(lengths.length&&lengths.every(value=>Number.isFinite(value)&&value>0)&&lengths.reduce((sum,value)=>sum+value,0)>15.1)
         throw Error("Selected audio references and video soundtracks exceed 15 seconds combined. Shorten or deselect one before generating.");
     }
-    if(state.ramLimit&&state.ramLimit<48&&state.mode==="refs"&&Number($("duration").value)>=362&&state.width>=1280)
-      throw Error("A previous 15.1 s Ref2VA render at this resolution ran out of this server's system RAM during video decoding. A server with 64 GB system RAM is recommended for this setting.");
+    if(refMemoryRisk())
+      throw Error("Long Ref2VA renders at this canvas exhausted this server's system RAM after sampling. Use a server with at least 64 GB system RAM; this render was not submitted.");
     for(const ref of state.refs.filter(item=>item.kind==="video")){
       const source=Number(ref.meta?.source_duration||ref.localDuration||0);
       if(ref.trimEnabled){
@@ -1382,7 +1385,9 @@ function showPreview(blob){
 }
 function samplerProgress(value,max){
   const now=Date.now(),step=Math.round(value),total=Math.round(max);
-  if(!Number.isFinite(step)||!Number.isFinite(total)||total<1||step<0)return;
+  // ComfyUI starts each node at 0/1 before sampler steps are available.
+  // Treating that node marker as the sampler count leaves the UI stuck at 0/1.
+  if(!Number.isFinite(step)||!Number.isFinite(total)||total<2||step<0)return;
   if(step>state.lastStep&&state.stepAt&&state.lastStep>0){
     state.stepDurations.push((now-state.stepAt)/1000/(step-state.lastStep));
     state.stepDurations=state.stepDurations.slice(-8);
@@ -1481,6 +1486,7 @@ async function pollHistory(){
 async function pollQueue(){
   try{
     const r=await fetch(api("/queue"));if(!r.ok)throw Error("queue unavailable");
+    if(state.serverMissingSince){state.serverMissingSince=null;if(state.running)setProgress("Connected · checking render progress",null,null,true);}
     const data=await r.json(),running=data.queue_running||[],pending=data.queue_pending||[];
     const id=state.running;
     const runningItem=running.find(item=>item[1]===id);
@@ -1505,6 +1511,8 @@ async function pollQueue(){
       }
       if(!state.renderStarted){state.renderStarted=Date.now();saveSession();}
       await pollServerProgress(id);
+      if(!state.lastStep&&Date.now()-state.renderStarted>30000&&$("status").textContent==="Preparing sampler")
+        setProgress("H3 sampling · detailed step updates unavailable",null,null,true);
       if(!state.lastStep&&state.phaseEtaAt===null&&["Restoring","Waiting in queue"].some(prefix=>$("status").textContent.startsWith(prefix))){
         const midpoint=state.estimated?(state.estimated.low+state.estimated.high)/2:null;
         setProgress("H3 rendering · waiting for step updates",8,midpoint,true);
@@ -1522,7 +1530,19 @@ async function pollQueue(){
         }
       }
     }
-  }catch{$("queueInfo").textContent="Queue: unavailable while disconnected";}
+  }catch{
+    $("queueInfo").textContent="Queue: unavailable while disconnected";
+    if(state.running){
+      state.serverMissingSince??=Date.now();
+      if(Date.now()-state.serverMissingSince>15000){
+        state.phaseEtaAt=null;
+        $("remaining").textContent="Time remaining: —";
+        $("status").textContent="Server disconnected · render status unknown";
+        showStageMessage("Server disconnected","The render may have stopped. Checking for the server to return.");
+        info("Connection to ComfyUI was lost. If the server ran out of memory, the unfinished video cannot be resumed.",true);
+      }
+    }
+  }
 }
 setInterval(pollHistory,5000);
 setInterval(pollQueue,5000);

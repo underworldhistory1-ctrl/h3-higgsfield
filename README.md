@@ -88,7 +88,7 @@ The repository includes a dedicated RTX 5090 image in `Dockerfile.salad`. It kee
 
 On the project's RTX 5090 server, Original mode produced a short clip and a 15.1-second clip with decodable video and audio. A 25 fps clip with audio was accepted as a reference, converted to 24 fps, and cleaned up afterward. New installs require the upstream H3 VAE tile fix before the UI permits generation. Qwen's graphs match the pinned ComfyUI 2.1 schemas and the source project's graph contract.
 
-On one 39 GB system-RAM RTX 5090 workspace, a 15.1-second 1280×704 Ref2VA render exhausted system RAM during video decoding after sampling completed. The UI blocks that known failing combination on sub-48 GB hosts. This does not measure the GPU's 32 GB VRAM; for that full-length setting, 64 GB system RAM is recommended, pending a successful validation render.
+On one 39 GB system-RAM RTX 5090 workspace, both 15.1-second Original and 14.38-second MotionCache Ref2VA renders exhausted system RAM during video decoding after all 20 sampling steps. The latter sampled for 50 minutes before the process was killed, with no MP4 saved. Studio blocks 12.25 seconds and longer at 1280×704 or above on hosts with under 56 GB reported RAM, rather than risk another long render. This does not measure the GPU's 32 GB VRAM; for that full-length setting, at least 64 GB advertised system RAM is recommended, pending a successful validation render.
 
 Qwen Image 2.1 weights use the Qwen Research License and are not licensed for commercial use. They are downloaded at runtime and are not redistributed by this repository.
 

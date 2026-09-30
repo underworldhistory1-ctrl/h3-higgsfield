@@ -22,7 +22,7 @@ The output canvas is an actual H3 Base dimension. Changing duration, canvas, ste
 
 The default 20-step graph does not use Turbo, cache, or sparse attention. Max reference image detail is the References default for identity fidelity; it does not raise output resolution. The 2K regeneration model is not part of this local bundle.
 
-Duration is a seconds input from 5 to 15.1. The UI converts the request to the nearest supported 24 fps `17k+5` frame count in the trained 124–362-frame range and displays the actual duration before submission. The same frame count feeds the H3 graph, estimates, and saved settings. On sub-48 GB system-RAM hosts, the UI blocks the exact 362-frame Ref2VA high-resolution combination that previously exhausted RAM during decoding; shorter combinations remain unverified rather than guaranteed safe.
+Duration is a seconds input from 5 to 15.1. The UI converts the request to the nearest supported 24 fps `17k+5` frame count in the trained 124–362-frame range and displays the actual duration before submission. The same frame count feeds the H3 graph, estimates, and saved settings. On hosts reporting under 56 GB system RAM, the UI blocks Ref2VA at 1280×704 or above from 294 frames onward: both 345- and 362-frame attempts finished sampling but exhausted RAM during decoding. Shorter combinations remain unverified rather than guaranteed safe. A node's initial `0/1` progress marker is not shown as sampling steps; if detailed steps are unavailable, the UI says so and marks a lost server connection instead of leaving a frozen progress label.
 
 ## Generation and results
 

@@ -45,11 +45,13 @@ the Studio UI. A ready API does not prove a full video or image render.
 
 The 40 GB RAM OpenBayes RTX 5090 workspace hit its cgroup memory limit during
 Video VAE decoding of a 362-frame, 1280×704 Ref2VA render after completing
-20 sampling steps. `memory.events` recorded one `oom_kill`; ComfyUI stopped and
-no output was saved. This is system RAM, not the RTX 5090's VRAM. Choose at
-least 64 GB system RAM for this full-length quality setting, or use a shorter
-render and review it. Studio warns and blocks the exact known failing case on
-sub-48 GB containers rather than silently lowering resolution or duration.
+20 sampling steps. A second 345-frame, 1280×704 MotionCache render completed
+20 sampling steps in 50 minutes and was killed during Video VAE decoding.
+`memory.events` recorded an `oom_kill`, and no output was saved. This is system
+RAM, not the RTX 5090's VRAM. Choose at least 64 GB advertised system RAM for
+long Ref2VA at this canvas. Studio blocks 294 frames and longer on hosts that
+report under 56 GB of system RAM, rather than silently lowering quality or
+wasting another long render. Shorter combinations remain unverified.
 The observed sampler alone took about 88 minutes (~264 seconds per step), so
 the initial uncalibrated ETA on that host was too optimistic. A successful
 completed render is needed before Studio can calibrate its saved timing.
