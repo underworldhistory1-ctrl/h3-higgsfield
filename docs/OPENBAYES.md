@@ -55,3 +55,16 @@ wasting another long render. Shorter combinations remain unverified.
 The observed sampler alone took about 88 minutes (~264 seconds per step), so
 the initial uncalibrated ETA on that host was too optimistic. A successful
 completed render is needed before Studio can calibrate its saved timing.
+
+## RTX 5090 CUDA runtime
+
+The OpenBayes PyTorch 2.8 image includes CUDA 12.8 and can report the 5090 as
+available while ComfyUI disables `comfy_kitchen`'s optimized CUDA backend.
+On a 2×5090 workspace, a 1280×704 Ref2VA MotionCache job then failed in the
+first sampling call inside the eager INT8 linear fallback with a GPU allocation
+error. The two 32 GB cards do not form one 64 GB pool for a single ComfyUI
+process. `install.sh` now pins PyTorch 2.9.1 with CUDA 13.0 in the persistent
+virtual environment. Restart ComfyUI after upgrading and check its log for
+`pytorch version: 2.9.1+cu130` and a `comfy_kitchen backend cuda` entry with
+`disabled: False`. This removes the fallback seen in that failure; a completed
+full-length render remains the required proof of end-to-end stability.
