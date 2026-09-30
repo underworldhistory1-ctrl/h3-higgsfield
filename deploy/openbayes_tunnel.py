@@ -8,6 +8,7 @@ import argparse
 import os
 import select
 import socketserver
+import threading
 
 import paramiko
 
@@ -16,12 +17,32 @@ class Forwarder(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    def open_remote_channel(self, peer):
+        for attempt in range(2):
+            with self.transport_lock:
+                if self.transport is None or not self.transport.is_active():
+                    self.client.close()
+                    self.client.connect(self.ssh_host, port=self.ssh_port, username=self.ssh_user,
+                                        password=self.ssh_password, timeout=20)
+                    self.transport = self.client.get_transport()
+                    self.transport.set_keepalive(30)
+                try:
+                    return self.transport.open_channel(
+                        "direct-tcpip", (self.remote_host, self.remote_port), peer
+                    )
+                except (EOFError, OSError, paramiko.SSHException):
+                    self.transport = None
+                    if attempt:
+                        raise
+        return None
+
 
 class Handler(socketserver.BaseRequestHandler):
     def handle(self):
-        channel = self.server.transport.open_channel(
-            "direct-tcpip", (self.server.remote_host, self.server.remote_port), self.request.getpeername()
-        )
+        try:
+            channel = self.server.open_remote_channel(self.request.getpeername())
+        except (EOFError, OSError, paramiko.SSHException):
+            return
         if channel is None:
             return
         try:
@@ -58,7 +79,14 @@ def main():
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(args.host, port=args.ssh_port, username=args.user, password=password, timeout=20)
     with Forwarder(("127.0.0.1", args.local_port), Handler) as server:
+        server.client = client
         server.transport = client.get_transport()
+        server.transport.set_keepalive(30)
+        server.transport_lock = threading.Lock()
+        server.ssh_host = args.host
+        server.ssh_port = args.ssh_port
+        server.ssh_user = args.user
+        server.ssh_password = password
         server.remote_host = args.remote_host
         server.remote_port = args.remote_port
         print(f"H3 Studio: http://127.0.0.1:{args.local_port}/extensions/h3_studio/index.html", flush=True)
