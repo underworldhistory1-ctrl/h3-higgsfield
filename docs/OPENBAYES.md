@@ -71,6 +71,12 @@ decode-only recovery using `H3LoadSavedLatent`, both VAE loaders,
 `VAEDecode`/`VAEDecodeAudio`, `CreateVideo`, and `H3SaveVideo`. The previous
 OOM happened before this checkpoint node was installed, so that run cannot
 be decoded without sampling again.
+For unattended OpenBayes operation, start
+`python3 deploy/openbayes_h3_supervisor.py --comfy-root /output/h3-stack/ComfyUI/ComfyUI`
+from the repository after stopping any standalone ComfyUI process. The
+supervisor restarts a worker that exits and submits each orphaned checkpoint
+for decode once in a clean worker. It does not retry a repeatedly failing
+checkpoint forever; the `.recovery-attempted` marker records that limit.
 The observed sampler alone took about 88 minutes (~264 seconds per step), so
 the initial uncalibrated ETA on that host was too optimistic. A successful
 completed render is needed before Studio can calibrate its saved timing.
