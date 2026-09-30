@@ -334,7 +334,7 @@ function renderEstimates() {
   $("estimateBasis").textContent = state.estimated.basis + ". Includes model load, video and audio. First run may take longer.";
   const risk=refMemoryRisk();
   $("memoryNotice").classList.toggle("hidden",!risk);
-  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. Long Ref2VA renders at this canvas have finished all sampling steps but exhausted system RAM during video decoding. This setting is blocked to avoid losing another render. Use a server with at least 64 GB system RAM for this length and canvas.`:"";
+  $("memoryNotice").textContent=risk?`This server has ${state.ramLimit} GB system RAM. Long Ref2VA renders at this canvas may run out of system RAM during video decoding. You can still render; a shorter duration, smaller canvas, or 64 GB RAM server lowers that risk.`:"";
 }
 function renderLoras() {
   const list=$("loraList");list.replaceChildren();
@@ -1113,8 +1113,6 @@ async function generate() {
       if(lengths.length&&lengths.every(value=>Number.isFinite(value)&&value>0)&&lengths.reduce((sum,value)=>sum+value,0)>15.1)
         throw Error("Selected audio references and video soundtracks exceed 15 seconds combined. Shorten or deselect one before generating.");
     }
-    if(refMemoryRisk())
-      throw Error("Long Ref2VA renders at this canvas exhausted this server's system RAM after sampling. Use a server with at least 64 GB system RAM; this render was not submitted.");
     for(const ref of state.refs.filter(item=>item.kind==="video")){
       const source=Number(ref.meta?.source_duration||ref.localDuration||0);
       if(ref.trimEnabled){
