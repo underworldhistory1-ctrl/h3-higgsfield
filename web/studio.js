@@ -81,7 +81,6 @@ function uploadMessage(message,pct=null){
 function loraModeCompatible(name,mode){
   if(name===turboName)return mode!=="refs";
   if(mode==="refs"){
-    if(/^H3_Combat_V2\.safetensors$/i.test(name))return false;
     if(/fl2v|fl2va|t2v/i.test(name)&&!/ref2v|r2v/i.test(name))return false;
   }else if(/ref2v|r2v/i.test(name)&&!/fl2v|t2v/i.test(name))return false;
   return true;
@@ -356,8 +355,9 @@ function renderLoras() {
     const name=document.createElement("span");name.style.cssText="overflow-wrap:anywhere;font-size:11px";name.textContent=managed?"H3 Turbo · controlled by Render method":combat?"Combat V2 · action / impact":realism?"Realism People · faces / movement":item.name;
     main.append(toggle,name);row.append(main);
     if(managed){const note=document.createElement("div");note.className="tip";note.textContent=state.mode==="refs"?"This Turbo adapter targets FL2VA; use Text or Frames.":"Select Turbo LoRA above to apply this adapter at strength 0.9.";row.append(note);}
-    if(combat||realism){const source=document.createElement("div");source.className="tip";source.textContent=combat?"Creator tested FL2VA only · Text / Frames · optional triggers prfight2, prfin1":"All three modes · trigger r34l1sm · 1.0 intended strength";row.append(source);}
-    if(incompatible&&!managed){const warning=document.createElement("div");warning.className="tip error";warning.textContent=combat?"Combat V2 is unverified on Ref2VA; use Text or Frames.":"This adapter appears to target a different H3 checkpoint.";row.append(warning);}
+    if(combat||realism){const source=document.createElement("div");source.className="tip";source.textContent=combat?"Creator tested FL2VA only · optional triggers prfight2, prfin1":"All three modes · trigger r34l1sm · 1.0 intended strength";row.append(source);}
+    if(combat&&state.mode==="refs"){const warning=document.createElement("div");warning.className="tip";warning.textContent="Experimental with Ref2VA: the creator tested FL2VA only. Appearance, motion and audio may change.";row.append(warning);}
+    if(incompatible&&!managed){const warning=document.createElement("div");warning.className="tip error";warning.textContent="This adapter appears to target a different H3 checkpoint.";row.append(warning);}
     if(item.enabled&&!managed){
       const strengthLabel=document.createElement("label");strengthLabel.textContent="MODEL STRENGTH";row.append(strengthLabel);
       const strength=document.createElement("input");strength.type="number";strength.min="0";strength.max="2";strength.step=".05";strength.value=String(item.strength);strength.disabled=state.busy;
@@ -1090,8 +1090,6 @@ async function generate() {
         throw Error("Include the Realism People trigger r34l1sm in your prompt before generating.");
       if(state.mode==="refs"&&/fl2v|fl2va|t2v/i.test(item.name)&&!/ref2v|r2v/i.test(item.name))
         throw Error("LoRA "+item.name+" appears to target FL2VA, not the Ref2VA checkpoint.");
-      if(state.mode==="refs"&&/^H3_Combat_V2\.safetensors$/i.test(item.name))
-        throw Error("Combat V2 was only tested on FL2VA. Use Text or Frames mode.");
       if(state.mode!=="refs"&&/ref2v|r2v/i.test(item.name)&&!/fl2v|t2v/i.test(item.name))
         throw Error("LoRA "+item.name+" appears to target Ref2VA, not the FL2VA checkpoint.");
     }
