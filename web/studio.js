@@ -509,7 +509,7 @@ function renderRefs() {
     roleLabel.textContent="USE AS";
     const options=ref.kind==="image"?
       [["character identity","Character"],["location","Location"],["visual style","Style"],["object","Object"]]:
-      ref.kind==="video"?[["motion","Motion"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
+      ref.kind==="video"?[["motion","Motion"],["motion and camera","Performance + camera"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
       [["voice","Voice"],["music","Music"],["sound effects","Effects"]];
     options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;role.append(o);});
     role.value=ref.role||options[0][0];
@@ -527,8 +527,8 @@ function renderRefs() {
       const fitLabel=document.createElement("label"),fit=document.createElement("input");fit.type="checkbox";fit.checked=ref.fitVideo!==false;fit.disabled=state.busy;fit.onchange=()=>{ref.fitVideo=fit.checked;saveDraft();};fitLabel.append(fit,document.createTextNode(" Auto fit oversized video to 1920×1080"));trim.append(fitLabel);card.append(trim);
       const guidance=document.createElement("div");guidance.className="tip video-guidance";
       guidance.textContent=ref.role==="whole scene"
-        ?"Guided remake: H3 generates a new video and may change other details. This is not a one-element edit or a frame-locked copy."
-        :"Motion, Camera and Action guide a new render. To ask H3 to follow the full clip, select Whole scene; it still cannot keep every other detail unchanged.";
+        ?"Whole scene guides the original subjects and setting too. For a new actor or location, choose Performance + camera. H3 cannot make a frame-locked actor replacement."
+        :"Performance + camera guides movement and framing without asking H3 to retain the source actor or location. Reference videos are still generative guides, not frame-locked edits.";
       card.append(guidance);
       const sound=document.createElement("label");sound.style.marginTop="8px";
       const check=document.createElement("input");check.type="checkbox";check.checked=!!ref.useAudio;check.disabled=state.busy||ref.meta?.has_audio===false;
@@ -539,7 +539,8 @@ function renderRefs() {
         }
         updateRefDurationNotice();renderEstimates();
       };
-      sound.append(check,document.createTextNode(" Also use this video's soundtrack"));card.append(sound);
+      sound.append(check,document.createTextNode(" Also use this video's soundtrack as an audio reference"));card.append(sound);
+      const soundHint=document.createElement("div");soundHint.className="tip";soundHint.textContent="Audio reference may also carry the original voice. For exact words with a new voice, write the dialogue and language in the prompt; H3 still generates new audio.";card.append(soundHint);
     }
     $("refs").append(card);
   });
@@ -704,8 +705,12 @@ function resolvedPrompt() {
     if(ref.kind==="audio")tag="<Audio "+(++audio)+">";
     names.set(ref.alias,tag);
     if(ref.kind==="video"&&ref.role==="whole scene"){
-      mediaNotes.push(tag+" is a whole-scene reference. Follow its visible setting, subjects, action, camera movement, composition and timing as closely as possible; apply only the change explicitly requested in [Shot 1]. Generate a new video rather than treating reference frames as locked pixels.");
-    }else if(ref.kind!=="image")mediaNotes.push(tag+" is a "+(ref.role||{video:"motion",audio:"sound"}[ref.kind])+" reference.");
+      mediaNotes.push(tag+" is a whole-scene reference. Follow its action, camera movement, composition and timing. Follow its subjects and setting only where [Shot 1] does not replace them. Explicit changes in [Shot 1] take priority. Generate a new video rather than treating reference frames as locked pixels.");
+    }else if(ref.kind==="video"&&ref.role==="motion and camera"){
+      mediaNotes.push(tag+" guides body performance, action timing and camera movement only. Do not transfer its actor identity, wardrobe, voice or location unless [Shot 1] explicitly requests them.");
+    }else if(ref.kind==="video"){
+      mediaNotes.push(tag+" is a "+(ref.role||"motion")+" reference only. Do not transfer its actor identity, wardrobe, voice or location unless [Shot 1] explicitly requests them.");
+    }else if(ref.kind==="audio")mediaNotes.push(tag+" is a "+(ref.role||"sound")+" reference.");
   });
   const unknown=[];
   const missing=ordered.filter(ref=>!new RegExp("@"+ref.alias+"(?=$|[^\\p{L}\\p{N}_-])","u").test(prompt));
@@ -1061,6 +1066,12 @@ async function generate() {
   let prompt,settings;
   try{
     prompt=resolvedPrompt();
+    const wantsSourceDialogue=$("prompt").value.split(/[.!?\n]+/).some(sentence=>
+      !/\b(?:do not|don't|never|avoid)\s+(?:preserve|keep|repeat|reuse)\b/i.test(sentence)
+      &&/\b(?:preserve|keep|repeat|reuse)\b.{0,60}\b(?:original|source|same)\b.{0,30}\b(?:dialogue|dialog|spoken words|speech)\b/i.test(sentence));
+    if(state.mode==="refs"&&state.refs.some(ref=>ref.kind==="video"&&!ref.useAudio)
+      &&wantsSourceDialogue)
+      throw Error("The reference video's soundtrack is off, so H3 cannot know its original words. Write the exact dialogue and language in the prompt for a new voice. Turning on the soundtrack supplies audio guidance but may also carry the original voice; H3 cannot guarantee exact speech.");
     if(!syncDuration())throw Error("Enter a duration from 5 to 15.1 seconds.");
     const steps=Number($("steps").value),seed=Number($("seed").value);
     if(!Number.isInteger(steps)||steps<Number($("steps").min)||steps>Number($("steps").max))throw Error("Sampling steps must be between "+$("steps").min+" and "+$("steps").max+" for this render method.");
