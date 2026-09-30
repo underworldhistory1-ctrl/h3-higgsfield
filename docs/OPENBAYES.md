@@ -8,6 +8,13 @@ new Linux ComfyUI checkout. The optional `deploy/openbayes_h3.sh` is for an
 existing persistent stack with the paths below; it is not a fresh machine
 installer.
 
+If a new workspace attaches only the model dataset and has no `/output/h3-stack`,
+run `deploy/openbayes_fresh_workspace.sh` from a clone of this repository. It
+installs the pinned ComfyUI checkout and dependencies under the new workspace's
+`/output`, links `ComfyUI/models` to `/input0/h3-models`, and reuses verified
+weights instead of downloading them again. It refuses to proceed if port 8188
+already serves ComfyUI or if an existing repository checkout has local edits.
+
 For that existing stack, copy `deploy/openbayes_h3.sh` to `/output/h3-stack/h3`
 and run `bash /output/h3-stack/h3 up`. It checks mounts and model sizes,
 installs the pinned Spectrum and MotionCache nodes, checks for an active render
