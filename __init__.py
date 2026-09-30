@@ -720,7 +720,8 @@ async def readiness(request):
         "UNETLoader", "MiniMaxH3SigmaShift", "CLIPLoader", "VAELoader",
         "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo",
         "ConditioningZeroOut", "KSampler", "VAEDecode", "VAEDecodeAudio",
-        "CreateVideo", "H3SaveVideo", "SaveVideo", "LoadImage", "LoadVideo",
+        "CreateVideo", "H3SaveVideo", "H3ReleaseForDecode", "H3LoadSavedLatent",
+        "SaveVideo", "LoadImage", "LoadVideo",
         "GetVideoComponents", "LoadAudio", "LoraLoaderModelOnly",
         "SpectrumApplyMiniMaxH3", "MiniMaxH3MotionCache",
     )
