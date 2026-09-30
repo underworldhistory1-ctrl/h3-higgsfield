@@ -54,4 +54,8 @@ else
 fi
 
 export QWEN_IMAGE_PROFILES=int8
+if [[ ! -x "$COMFY/.venv/bin/python" ]]; then
+    python3 -m venv "$COMFY/.venv"
+fi
+export COMFY_PYTHON="$COMFY/.venv/bin/python"
 bash "$REPO/install.sh" --comfy-root "$COMFY" --bind 127.0.0.1
