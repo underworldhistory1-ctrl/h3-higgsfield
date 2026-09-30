@@ -48,5 +48,5 @@ During an active render, `/h3_studio/job_progress` reads ComfyUI's sampler progr
 The Image workspace is separate from all H3 video branches. Both Create and Edit load the selected Qwen diffusion model, Qwen VL encoder and Qwen 2.1 VAE, then use `TextEncodeQwenImage21`, `KSampler` (Euler/simple, CFG 1), `VAEDecode` and `QwenStudioSaveImage`.
 
 - **Create:** `EmptyLatentImage` supplies the selected 1/1.6/4 MP canvas. Transparency adds Qwen's documented RGBA instruction.
-- **Edit:** `LoadImage` supplies 1–10 ordered photos through `images.image_N`; the first photo defines the canvas unless the user explicitly resizes it. `QwenImage21Cache` is enabled and the encoder's latent output feeds the sampler.
+- **References:** `LoadImage` supplies 1–10 ordered photos through `images.image_N`; the first photo defines the canvas unless the user explicitly resizes it. The UI offers Move up/down because image order changes both `<imageN>` mentions and the canvas source. `QwenImage21Cache` is enabled and the encoder's latent output feeds the sampler. Adding images requests image-conditioned generation, not pixel-locked compositing; an explicit instruction must state what to take from each image.
 - **Profiles:** INT8 and BF16 are selectable only when every exact file in that profile has the expected size. Salad defaults to INT8.

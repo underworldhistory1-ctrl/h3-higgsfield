@@ -20,6 +20,7 @@
 .dialog{width:min(560px,calc(100vw - 24px));max-height:82vh;overflow:auto;border:1px solid #555;border-radius:14px;background:#1b1b1b;color:var(--text);padding:20px}.dialog::backdrop{background:#000b}.dialog-head{display:flex;justify-content:space-between;align-items:center}.dialog-head h2{margin:0;font-size:18px}.settings{display:grid;grid-template-columns:34% 1fr;margin-top:13px}.settings dt,.settings dd{padding:8px 4px;margin:0;border-bottom:1px solid #383838;font-size:12px;overflow-wrap:anywhere}.settings dt{color:var(--muted)}
 .profile-note{background:#292f1c;border:1px solid #617226;border-radius:8px;padding:9px;margin-top:9px;color:#dfe8c8;font-size:10px}.profile-note strong{color:var(--acid)}
 .ref{grid-template-columns:52px minmax(0,1fr) auto;align-items:start;overflow:hidden}.ref>div{min-width:0}.ref-alias-row{grid-column:1/-1;width:100%}.ref .ref-name{min-width:0;max-width:100%;margin-top:0}.ref-insert{grid-column:1/-1;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ref small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mention-list button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ref-order{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ref-order span{margin-right:auto;color:var(--muted);font-size:10px}.ref-order button{padding:4px 7px}
 @media(max-width:900px){.shell{grid-template-columns:330px minmax(0,1fr)}.right{padding:18px}.stage{min-height:260px}}@media(max-width:720px){.top{height:58px;padding:0 14px}.topnav{margin-left:10px;gap:12px}.topnav a{height:58px}.connection span{max-width:90px}.shell{height:auto;display:flex;flex-direction:column}.left{border-right:0;overflow:visible}.right{overflow:visible;padding-bottom:110px}.actiondock{position:fixed;left:0;right:0;bottom:0;box-shadow:0 -12px 28px #0009}.stage{min-height:230px}.controls{grid-template-columns:1fr}.brand-name{display:none}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -35,16 +36,16 @@
    <div class="section-tabs"><span>Create Image</span><span>Qwen workflow</span></div>
    <div class="model-hero"><div class="eyebrow">MODEL · QWEN IMAGE 2.1</div><h1>Qwen Image 2.1</h1><p>Create images from a prompt, with optional visual references.</p></div>
    <section class="panel" id="editPanel">
-    <h2>References <span id="referenceCount" class="tip">Optional</span></h2><p>Add up to 10 images. Name them and type @name in your prompt. With references, Qwen can edit or create a different image; the prompt controls what to keep.</p>
+    <h2>References <span id="referenceCount" class="tip">Optional</span></h2><p>Add up to 10 images. Image 1 sets the output canvas; the others add visual context. Arrange them below, then name each image in the prompt to say what to keep or combine.</p>
     <div class="uploadbox"><button id="addReferences" type="button" class="button alt small">+ Add images</button><span class="tip">PNG, JPG or WebP · 25 MB each · 10 maximum</span></div>
     <input id="referenceFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
     <div id="referenceList" class="refs"></div>
     <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="fitReferences" type="checkbox" checked style="width:auto"> Auto fit oversized references before upload · 2048 px maximum</label>
     <div id="referenceOptions" hidden><label for="referenceResolution">REFERENCE DETAIL</label><select id="referenceResolution"><option value="1024" selected>Balanced · 1024 px</option><option value="1536">High · 1536 px</option><option value="2048">Maximum · 2048 px</option><option value="0">Keep source size</option></select>
-    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="customSize" type="checkbox" style="width:auto"> Fit first image to selected output size</label><div class="tip">This uses a center crop if the aspect ratio changes. Otherwise, the first reference sets the output canvas.</div></div>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="customSize" type="checkbox" style="width:auto"> Fit first image to selected output size</label><div class="tip">Image 1 still guides the result. Fitting to a different aspect ratio center-crops it; otherwise its size sets the canvas. Choose your base image first.</div></div>
    </section>
    <section class="panel">
-    <h2>Prompt</h2><p id="promptHelp">Describe the image. Add references above if needed, then type @ to name them.</p>
+    <h2>Prompt</h2><p id="promptHelp">Describe the result. For multiple images, name each one and specify what comes from it, for example: “Put the person from @person in the room from @room.”</p>
     <textarea id="prompt" placeholder="A cinematic portrait in soft window light, precise natural skin texture."></textarea>
     <div id="mentionMenu" class="mention-menu is-hidden" role="listbox" aria-label="Reference suggestions"></div><div id="mentionList" class="mention-list" aria-label="Attached references"></div>
     <div id="error" class="notice error hidden" role="alert"></div>
@@ -75,6 +76,6 @@
  </section>
 </main>
 <dialog id="detailsDialog" class="dialog" aria-labelledby="detailsTitle"><div class="dialog-head"><h2 id="detailsTitle">Image settings</h2><button id="closeDetails" class="button alt small" aria-label="Close settings">✕ Close</button></div><div id="detailsContent"></div></dialog>
-<script src="./image-studio.js?v=20260930-image-delete-1"></script>
+<script src="./image-studio.js?v=20260930-qwen-ref-order-1"></script>
 </body>
 </html>

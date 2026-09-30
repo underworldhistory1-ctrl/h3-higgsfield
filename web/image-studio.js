@@ -63,6 +63,14 @@ function renderMentions(){
   menu.classList.toggle("is-hidden",!matches.length);matches.forEach(ref=>{const index=state.refs.indexOf(ref),button=document.createElement("button");button.type="button";button.role="option";button.textContent=`@${ref.name} · image${index+1}`;button.onmousedown=event=>event.preventDefault();button.onclick=()=>{insertMention(ref.name);menu.classList.add("is-hidden");};menu.append(button);});
 }
 
+function moveReference(index,direction){
+  if(state.busy)return;
+  const next=index+direction;
+  if(next<0||next>=state.refs.length)return;
+  [state.refs[index],state.refs[next]]=[state.refs[next],state.refs[index]];
+  renderRefs();saveDraft();showError("");
+}
+
 function renderRefs(){
   $("referenceList").replaceChildren();state.refs.forEach((ref,index)=>{
     const row=document.createElement("div");row.className="ref";const image=document.createElement("img");image.src=ref.url;image.alt=`Preview of image ${index+1}`;
@@ -71,7 +79,15 @@ function renderRefs(){
     const aliasRow=document.createElement("div");aliasRow.className="ref-alias-row";aliasRow.append(nameLabel,nameInput);
     const insert=document.createElement("button");insert.type="button";insert.className="button alt small ref-insert";insert.textContent=`Insert @${ref.name} into prompt`;insert.title=insert.textContent;insert.disabled=state.busy;insert.onclick=()=>{insertMention(ref.name);$("prompt").scrollIntoView({behavior:"smooth",block:"center"});};
     nameInput.addEventListener("input",()=>{insert.textContent=`Insert @${ref.name} into prompt`;insert.title=insert.textContent;});
-    row.append(image,text,remove,aliasRow,insert);$("referenceList").append(row);
+    const order=document.createElement("div");order.className="ref-order";
+    const orderLabel=document.createElement("span");orderLabel.textContent=index===0?"Image 1 · output canvas / base":"Image "+(index+1)+" · additional reference";
+    order.append(orderLabel);
+    for(const [label,direction] of [["Move up",-1],["Move down",1]]){
+      const button=document.createElement("button");button.type="button";button.className="button alt small";button.textContent=label;
+      button.setAttribute("aria-label",`${label} ${ref.name}`);button.disabled=state.busy||index+direction<0||index+direction>=state.refs.length;
+      button.onclick=()=>moveReference(index,direction);order.append(button);
+    }
+    row.append(image,text,remove,aliasRow,order,insert);$("referenceList").append(row);
   });renderMentions();updateSettings();
 }
 $("addReferences").onclick=()=>{if(!state.busy)$("referenceFiles").click();};
