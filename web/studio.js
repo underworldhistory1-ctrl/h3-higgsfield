@@ -696,7 +696,7 @@ function resolvedPrompt() {
       tag="<Subject "+(++subject)+">";
       definitions.push(tag+" is the "+(ref.role||"visual subject")+" shown in "+picture+". Keep its visible defining details.");
       const retain=ref.role==="visual style"?"attribute_transfer":"fully_preserved";
-      retention.push(tag+" (appears in [Shot 1]): "+retain+" - preserve the defining visual attributes shown in "+picture+".");
+      retention.push(tag+": "+retain+" - preserve the defining visual attributes shown in "+picture+" wherever this subject appears in the target sequence.");
     }
     if(ref.kind==="video"){
       if(ref.useAudio)mediaNotes.push("<Audio "+(++audio)+"> is the soundtrack paired with this reference video.");
@@ -705,11 +705,11 @@ function resolvedPrompt() {
     if(ref.kind==="audio")tag="<Audio "+(++audio)+">";
     names.set(ref.alias,tag);
     if(ref.kind==="video"&&ref.role==="whole scene"){
-      mediaNotes.push(tag+" is a whole-scene reference. Follow its action, camera movement, composition and timing. Follow its subjects and setting only where [Shot 1] does not replace them. Explicit changes in [Shot 1] take priority. Generate a new video rather than treating reference frames as locked pixels.");
+      mediaNotes.push(tag+" is a whole-scene reference. Follow its action, camera movement, composition and timing. Follow its subjects and setting only where the detailed_description does not replace them. Explicit changes in the detailed_description take priority. Generate a new video rather than treating reference frames as locked pixels.");
     }else if(ref.kind==="video"&&ref.role==="motion and camera"){
-      mediaNotes.push(tag+" guides body performance, action timing and camera movement only. Do not transfer its actor identity, wardrobe, voice or location unless [Shot 1] explicitly requests them.");
+      mediaNotes.push(tag+" guides body performance, action timing and camera movement only. Do not transfer its actor identity, wardrobe, voice or location unless the detailed_description explicitly requests them.");
     }else if(ref.kind==="video"){
-      mediaNotes.push(tag+" is a "+(ref.role||"motion")+" reference only. Do not transfer its actor identity, wardrobe, voice or location unless [Shot 1] explicitly requests them.");
+      mediaNotes.push(tag+" is a "+(ref.role||"motion")+" reference only. Do not transfer its actor identity, wardrobe, voice or location unless the detailed_description explicitly requests them.");
     }else if(ref.kind==="audio")mediaNotes.push(tag+" is a "+(ref.role||"sound")+" reference.");
   });
   const unknown=[];
@@ -720,12 +720,14 @@ function resolvedPrompt() {
     return names.get(name);
   });
   if(unknown.length)throw Error("Unknown mention: "+[...new Set(unknown)].join(", "));
+  const shotOne=/\[Shot\s+1\]/i.test(prompt);
+  const summaryLead=(prompt.match(/^[^\n.!?]+[.!?]?/)||[])[0]?.trim()||"Generate the requested target sequence.";
   return "subject_definitions:\n"+(definitions.join("\n")||"No separate still-image subject is defined.")
-    +"\n\nsummary:\n[reference generation] "+prompt+" "+mediaNotes.join(" ")
+    +"\n\nsummary:\n[reference generation] "+summaryLead+" "+mediaNotes.join(" ")
     +"\n\nretention_analysis:\n"+(retention.join("\n")||"Preserve the motion and sound qualities of the cited references.")
-    +"\n\ndetailed_description:\n[Shot 1] "+prompt
-    +"\n\noverall_soundscape:\nUse cited audio references and scene sounds described in [Shot 1]."
-    +"\n\nnon_diegetic_music:\nOnly music explicitly requested in [Shot 1].";
+    +"\n\ndetailed_description:\n"+(shotOne?prompt:"[Shot 1] "+prompt)
+    +"\n\noverall_soundscape:\nUse cited audio references and scene sounds described in the detailed_description, timed to their shots."
+    +"\n\nnon_diegetic_music:\nOnly music explicitly requested in the detailed_description.";
 }
 function orderedRefs(){return ["image","video","audio"].flatMap(k=>state.refs.filter(r=>r.kind===k));}
 
@@ -1066,6 +1068,10 @@ async function generate() {
   let prompt,settings;
   try{
     prompt=resolvedPrompt();
+    const aspectLead=$("prompt").value.slice(0,300);
+    const asksLandscape=/\b16\s*[:x/]\s*9\b/i.test(aspectLead),asksPortrait=/\b9\s*[:x/]\s*16\b/i.test(aspectLead);
+    if(asksLandscape&&!asksPortrait&&state.height>state.width)throw Error("The prompt asks for 16:9, but Output settings is set to Portrait. Select Landscape before generating.");
+    if(asksPortrait&&!asksLandscape&&state.width>state.height)throw Error("The prompt asks for 9:16, but Output settings is set to Landscape. Select Portrait before generating.");
     const wantsSourceDialogue=$("prompt").value.split(/[.!?\n]+/).some(sentence=>
       !/\b(?:do not|don't|never|avoid)\s+(?:preserve|keep|repeat|reuse)\b/i.test(sentence)
       &&/\b(?:preserve|keep|repeat|reuse)\b.{0,60}\b(?:original|source|same)\b.{0,30}\b(?:dialogue|dialog|spoken words|speech)\b/i.test(sentence));
