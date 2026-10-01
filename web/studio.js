@@ -773,8 +773,8 @@ function graph(prompt,uploads,token) {
     g["8"].inputs.model=["61",0];
   }
   if(!refs){
-    if(uploads.first){g["13"]={class_type:"LoadImage",inputs:{image:uploads.first}};g["6"].inputs.first_frame=["13",0];}
-    if(uploads.last){g["14"]={class_type:"LoadImage",inputs:{image:uploads.last}};g["6"].inputs.last_frame=["14",0];}
+    if(uploads.first){g["15"]={class_type:"LoadImage",inputs:{image:uploads.first}};g["6"].inputs.first_frame=["15",0];}
+    if(uploads.last){g["16"]={class_type:"LoadImage",inputs:{image:uploads.last}};g["6"].inputs.last_frame=["16",0];}
     return g;
   }
   Object.assign(g["6"].inputs,{audio_vae:["5",0],ref_image_size:$("refSize").value});
