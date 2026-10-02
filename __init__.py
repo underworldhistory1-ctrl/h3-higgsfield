@@ -28,6 +28,7 @@ from aiohttp import web
 import folder_paths
 from server import PromptServer
 from .h3_video_save import H3LoadSavedLatent, H3ReleaseForDecode, H3SaveVideo
+from .h3_lab.routes import register_lab_routes
 from .qwen_image import (
     NODE_CLASS_MAPPINGS as QWEN_NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS as QWEN_NODE_DISPLAY_NAME_MAPPINGS,
@@ -941,6 +942,8 @@ def _untracked_debris(now):
             with _lock:
                 if name in _tracked:
                     continue          # a session owns it; handled below
+            if _lab_assets.is_leased(name) or _lab_jobs.is_file_leased(name) or not _lab_assets.can_discard_input(name):
+                continue
             try:
                 if now - os.path.getmtime(path) > STALE_AFTER:
                     found.append(name)
@@ -964,7 +967,9 @@ def _sweep_stale():
                         if now - item["seen"] > STALE_AFTER]:
                 _resumed.pop(sid, None)
             doomed = [n for n, m in _tracked.items()
-                      if _safe_input_path(n) and now - m["ts"] > STALE_AFTER]
+                      if _safe_input_path(n) and now - m["ts"] > STALE_AFTER
+                      and not _lab_assets.is_leased(n) and not _lab_jobs.is_file_leased(n)
+                      and _lab_assets.can_discard_input(n)]
         for name in doomed + _untracked_debris(now):
             _discard(name)
 
@@ -978,10 +983,18 @@ def _wipe_orphans_at_startup():
             path = resolve(name)
             with _lock:
                 saved = _tracked.get(name, {}).get("kept", False)
-            if path and not saved:
+            if path and not saved and _lab_assets.can_discard_input(name) and not _lab_jobs.is_file_leased(name):
                 secure_wipe(path)
                 print(f"[h3_studio] wiped orphan {name}")
 
+
+_lab_services = register_lab_routes(
+    PromptServer.instance.app if hasattr(PromptServer, "instance") and hasattr(PromptServer.instance, "app") else None,
+    _video_dir(),
+    folder_paths_mod=folder_paths
+)
+_lab_assets = _lab_services["assets"]
+_lab_jobs = _lab_services["jobs"]
 
 _metadata.update(_load_metadata())
 _registered_jobs.update(_load_jobs())

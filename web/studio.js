@@ -16,13 +16,38 @@ const state = {
   queueMissingSince: null,
   serverMissingSince: null,
 };
-const landscapeSizes = [
-  [1344,768,"Native detail"],
-  [1280,704,"Near 720p"],
-  [1024,576,"Compact"],
-  [864,480,"Draft"],
-];
-const sizes = landscapeSizes.flatMap(([w,h,label])=>[[w,h,label],[h,w,label]]);
+const aspectPresets = {
+  "16:9": [
+    [1280,704,"Near 720p"],
+    [1344,768,"Native detail"],
+    [1024,576,"Compact"],
+    [864,480,"Draft"],
+  ],
+  "9:16": [
+    [704,1280,"Vertical 720p"],
+    [768,1344,"Vertical max"],
+    [576,1024,"Vertical compact"],
+    [480,864,"Vertical draft"],
+  ],
+  "1:1": [
+    [960,960,"Square 960p"],
+    [896,896,"Square 896p"],
+  ],
+  "4:3": [
+    [1152,864,"Standard 4:3"],
+    [1024,768,"Classic 4:3"],
+  ],
+  "3:4": [
+    [864,1152,"Portrait 3:4"],
+    [768,1024,"Classic 3:4"],
+  ],
+  "21:9": [
+    [1344,576,"Cinema 21:9"],
+    [1472,640,"Ultrawide 21:9"],
+  ],
+};
+const landscapeSizes = aspectPresets["16:9"];
+const sizes = Object.values(aspectPresets).flat();
 const maxRefs = {image:9,video:3,audio:3};
 const mediaRules={
   image:{ext:/\.(png|jpe?g|webp)$/i,max:25*1024*1024},
@@ -305,16 +330,36 @@ function estimateFor(w=state.width,h=state.height) {
   return {low:fallback[0]*unit*gpuScale*methodRange[0],high:fallback[1]*unit*gpuScale*methodRange[1],
     basis:(method()==="native"?"Broad initial estimate":"Uncalibrated method; baseline-derived range, not a speed promise") + (pro?" for RTX PRO 6000 Blackwell":" before GPU calibration")};
 }
+function currentAspectFormat() {
+  for(const [fmt, list] of Object.entries(aspectPresets)) {
+    if(list.some(([w,h]) => w===state.width && h===state.height)) return fmt;
+  }
+  return state.height > state.width ? "9:16" : "16:9";
+}
+
 function renderEstimates() {
   const wrap = $("estimates");
   wrap.replaceChildren();
-  const portrait=state.height>state.width;
-  for(const [id,pressed] of [["aspectLandscape",!portrait],["aspectPortrait",portrait]]){
-    $(id).setAttribute("aria-pressed",String(pressed));
-    $(id).classList.toggle("selected",pressed);
-    $(id).disabled=state.busy;
+  const currentFmt = state.aspectFormat || currentAspectFormat();
+  const btnMap = [
+    ["aspectLandscape", "16:9"],
+    ["aspectPortrait", "9:16"],
+    ["aspectSquare", "1:1"],
+    ["aspect4_3", "4:3"],
+    ["aspect3_4", "3:4"],
+    ["aspect21_9", "21:9"],
+  ];
+  for(const [id, fmt] of btnMap){
+    const el = $(id);
+    if(el){
+      const pressed = fmt === currentFmt;
+      el.setAttribute("aria-pressed",String(pressed));
+      el.classList.toggle("selected",pressed);
+      el.disabled=state.busy;
+    }
   }
-  sizes.filter(([w,h])=>(h>w)===portrait).forEach(([w,h,label]) => {
+  const activeSizes = aspectPresets[currentFmt] || aspectPresets["16:9"];
+  activeSizes.forEach(([w,h,label]) => {
     const est = estimateFor(w,h);
     const b = document.createElement("button");
     b.className = "estrow" + (w===state.width && h===state.height ? " selected":"");
@@ -422,15 +467,23 @@ function aliasName(fileName) {
   while(state.refs.some(r=>r.alias===unique)) {const suffix="_"+i++;unique=name.slice(0,32-suffix.length)+suffix;}
   return unique;
 }
-function setAspect(portrait){
+function setAspectFormat(fmt){
   if(state.busy)return;
-  const chosen=landscapeSizes.find(([w,h])=>(state.width===w&&state.height===h)||(state.width===h&&state.height===w))||landscapeSizes[1];
-  state.width=portrait?chosen[1]:chosen[0];
-  state.height=portrait?chosen[0]:chosen[1];
+  state.aspectFormat=fmt;
+  const list=aspectPresets[fmt]||aspectPresets["16:9"];
+  state.width=list[0][0];
+  state.height=list[0][1];
   renderEstimates();saveDraft();
 }
-$("aspectLandscape").onclick=()=>setAspect(false);
-$("aspectPortrait").onclick=()=>setAspect(true);
+function setAspect(portrait){
+  setAspectFormat(portrait ? "9:16" : "16:9");
+}
+$("aspectLandscape").onclick=()=>setAspectFormat("16:9");
+$("aspectPortrait").onclick=()=>setAspectFormat("9:16");
+if($("aspectSquare")) $("aspectSquare").onclick=()=>setAspectFormat("1:1");
+if($("aspect4_3")) $("aspect4_3").onclick=()=>setAspectFormat("4:3");
+if($("aspect3_4")) $("aspect3_4").onclick=()=>setAspectFormat("3:4");
+if($("aspect21_9")) $("aspect21_9").onclick=()=>setAspectFormat("21:9");
 function fitReferenceTrim(ref) {
   const source=Number(ref.meta?.source_duration||ref.localDuration||0);
   const start=Number(ref.trimStart);
@@ -508,15 +561,23 @@ function renderRefs() {
     const roleWrap=document.createElement("div"),roleLabel=document.createElement("label"),role=document.createElement("select");
     roleLabel.textContent="USE AS";
     const options=ref.kind==="image"?
-      [["character identity","Character"],["storyboard","Storyboard · shot guide"],["location","Location"],["visual style","Style"],["object","Object"]]:
-      ref.kind==="video"?[["motion","Motion"],["motion and camera","Performance + camera"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
-      [["voice","Voice"],["music","Music"],["sound effects","Effects"]];
+      [["character identity","Character"],["custom","Custom — describe in prompt"],["storyboard","Storyboard · shot guide"],["location","Location"],["visual style","Style"],["object","Object"]]:
+      ref.kind==="video"?[["motion","Motion"],["custom","Custom — describe in prompt"],["motion and camera","Performance + camera"],["camera movement","Camera"],["action","Action"],["whole scene","Whole scene · guided remake"]]:
+      [["voice","Voice"],["custom","Custom — describe in prompt"],["music","Music"],["sound effects","Effects"]];
     options.forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;role.append(o);});
     role.value=ref.role||options[0][0];
     role.disabled=state.busy;
-    role.onchange=()=>{ref.role=role.value;saveDraft();renderRefs();};
+    role.onchange=()=>{ref.role=role.value;saveDraft();renderRefs();updatePreviewLive();};
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
+    if(ref.role==="custom"){
+      const instWrap=document.createElement("div");instWrap.className="section";instWrap.style.marginTop="6px";instWrap.style.paddingTop="6px";
+      const instLabel=document.createElement("label");instLabel.textContent="CUSTOM INSTRUCTION (OPTIONAL)";instLabel.style.margin="4px 0 3px";
+      const instInput=document.createElement("input");instInput.placeholder="e.g. use for lighting direction only; replace subject";
+      instInput.value=ref.instruction||"";instInput.disabled=state.busy;
+      instInput.oninput=()=>{ref.instruction=instInput.value.trim();saveDraft();updatePreviewLive();};
+      instWrap.append(instLabel,instInput);card.append(instWrap);
+    }
     const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=state.busy;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
     if(ref.kind==="video"){
       const trim=document.createElement("div");trim.className="section";
@@ -647,156 +708,122 @@ $("prompt").addEventListener("input",mentionState);
 $("prompt").addEventListener("click",mentionState);
 $("prompt").addEventListener("blur",()=>setTimeout(()=>$("mentionMenu").classList.add("hidden"),120));
 
-function resolvedPrompt() {
-  let prompt=$("prompt").value.trim();
-  if(!prompt) throw Error("Write the scene prompt first.");
-  if(state.mode==="frames"){
-    const frameTags=new Map();
-    if(state.first)frameTags.set("start","<Picture 1>");
-    if(state.last)frameTags.set("end","<Picture "+(state.first?2:1)+">");
-    prompt=prompt.replace(/@([\p{L}\p{N}_-]+)/gu,(whole,name)=>{
-      if(!frameTags.has(name))throw Error("Frame mention "+whole+" has no matching uploaded frame.");
-      return frameTags.get(name);
-    });
+function currentRenderSpec() {
+  const refs = state.mode === "refs";
+  return {
+    mode: state.mode,
+    prompt_mode: state.promptMode || "guided",
+    source_prompt: $("prompt").value.trim(),
+    references: refs ? state.refs.map(r => ({
+      asset_id: r.assetId || r.alias,
+      alias: r.alias,
+      kind: r.kind,
+      role: r.role || (r.kind === "image" ? "character identity" : r.kind === "video" ? "motion" : "voice"),
+      instruction: r.instruction || "",
+      use_audio: !!r.useAudio,
+      file: r.file?.name
+    })) : [],
+    guides: state.guides || [],
+    first: state.mode === "frames" && state.first ? { file: state.first.file?.name } : null,
+    last: state.mode === "frames" && state.last ? { file: state.last.file?.name } : null,
+    canvas: { width: state.width, height: state.height },
+    width: state.width,
+    height: state.height,
+    target_frames: Number($("duration").value),
+    duration: Number($("duration").value),
+    duration_seconds: seconds(),
+    seed: Number($("seed").value),
+    steps: Number($("steps").value),
+    render_method: method(),
+    ref_image_size: $("refSize") ? $("refSize").value : "match",
+    loras: state.loras.filter(x => x.enabled),
+    continuation: state.continuation || null,
+  };
+}
+
+function updatePreviewLive() {
+  const display = $("compiledPromptDisplay");
+  const tagsWrap = $("tagBindingsDisplay");
+  if (!display) return;
+  const spec = currentRenderSpec();
+  if (!spec.source_prompt) {
+    display.textContent = "Write a prompt to see the compiled preview.";
+    if (tagsWrap) tagsWrap.replaceChildren();
+    return;
   }
-  if(state.mode!=="refs"){
-    const alreadyStructured=/^integrated_multimodal_description:/i.test(prompt);
-    if(!alreadyStructured){
-      const anchor=state.mode==="frames"?
-        state.first&&state.last?"Begin with <Picture 1> and end with <Picture 2>. ":
-        state.first?"Begin with <Picture 1>. ":"End with <Picture 1>. ":"";
-      prompt="integrated_multimodal_description: [Shot 1] "+anchor+prompt
-        +"\n\noverall_soundscape: Use the sounds described in [Shot 1]; otherwise only natural scene ambience."
-        +"\n\nnon_diegetic_music: Only music explicitly requested in [Shot 1].";
-    }
-  }
-  if(state.mode==="frames"){
-    if(!state.first&&!state.last)throw Error("Add a start frame, an end frame, or both.");
-    const stamp=seconds().toFixed(2);
-    const alignment=state.first&&state.last?
-      "How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot N) aligns with the "+stamp+"-second mark of the target video.":
-      state.first?"For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.":
-      "How the reference pictures align with the target video — <Picture 1> (from [Shot N]) aligns with the "+stamp+"-second mark of the target video.";
-    return alignment+"\n\n"+prompt;
-  }
-  if(state.mode!=="refs")return prompt;
-  if(!state.refs.length)throw Error("Add at least one reference.");
-  if(state.refs.length>12)throw Error("H3 accepts at most 12 reference files.");
-  const videoDuration=videoReferenceDuration();
-  if(videoDuration!==null&&videoDuration>15.1)
-    throw Error("Video references total "+videoDuration.toFixed(2)+" seconds. H3 allows 15 seconds combined; trim at least "+(videoDuration-15).toFixed(2)+" seconds and retry.");
-  if(state.refs.filter(ref=>ref.kind==="audio"||ref.kind==="video"&&ref.useAudio).length>3)throw Error("H3 accepts at most three audio references, including video soundtracks.");
-  const ordered=orderedRefs();
-  const names=new Map(),definitions=[],retention=[],mediaNotes=[];
-  let image=0,subject=0,video=0,audio=0;
-  ordered.forEach(ref=>{
-    let tag;
-    if(ref.kind==="image"){
-      const picture="<Picture "+(++image)+">";
-      if(ref.role==="storyboard"){
-        tag=picture;
-        mediaNotes.push(picture+" is a multi-panel storyboard. Read panels left to right, top to bottom as a shot and composition guide; do not render panel borders or labels. Follow explicit shot descriptions when they differ.");
-        retention.push(picture+": attribute_transfer - guide shot order, framing and visual progression; do not treat the sheet as a single visible subject.");
-      }else{
-        tag="<Subject "+(++subject)+">";
-        definitions.push(tag+" is the "+(ref.role||"visual subject")+" shown in "+picture+". Keep its visible defining details.");
-        const retain=ref.role==="visual style"?"attribute_transfer":"fully_preserved";
-        retention.push(tag+": "+retain+" - preserve the defining visual attributes shown in "+picture+" wherever this subject appears in the target sequence.");
+  try {
+    const res = H3PromptCompiler.compilePrompt(spec);
+    display.textContent = res.compiled_prompt;
+    if (tagsWrap) {
+      tagsWrap.replaceChildren();
+      (res.bindings || []).forEach(b => {
+        const span = document.createElement("span");
+        span.className = "prompt-asset used";
+        span.innerHTML = `<strong>@${b.alias}</strong> <span>→ ${b.tag}</span> <small>${b.kind}${b.role ? " · " + b.role : ""}</small>`;
+        tagsWrap.append(span);
+      });
+      if (res.warnings && res.warnings.length) {
+        res.warnings.forEach(w => {
+          const wSpan = document.createElement("div");
+          wSpan.className = "notice";
+          wSpan.style.fontSize = "11px";
+          wSpan.textContent = "Warning: " + w;
+          tagsWrap.append(wSpan);
+        });
       }
     }
-    if(ref.kind==="video"){
-      if(ref.useAudio)mediaNotes.push("<Audio "+(++audio)+"> is the soundtrack paired with this reference video.");
-      tag="<Video "+(++video)+">";
-    }
-    if(ref.kind==="audio")tag="<Audio "+(++audio)+">";
-    names.set(ref.alias,tag);
-    if(ref.kind==="video"&&ref.role==="whole scene"){
-      mediaNotes.push(tag+" is a whole-scene reference. Follow its action, camera movement, composition and timing. Follow its subjects and setting only where the detailed_description does not replace them. Explicit changes in the detailed_description take priority. Generate a new video rather than treating reference frames as locked pixels.");
-    }else if(ref.kind==="video"&&ref.role==="motion and camera"){
-      mediaNotes.push(tag+" guides body performance, action timing and camera movement only. Do not transfer its actor identity, wardrobe, voice or location unless the detailed_description explicitly requests them.");
-    }else if(ref.kind==="video"){
-      mediaNotes.push(tag+" is a "+(ref.role||"motion")+" reference only. Do not transfer its actor identity, wardrobe, voice or location unless the detailed_description explicitly requests them.");
-    }else if(ref.kind==="audio")mediaNotes.push(tag+" is a "+(ref.role||"sound")+" reference.");
-  });
-  const unknown=[];
-  const missing=ordered.filter(ref=>!new RegExp("@"+ref.alias+"(?=$|[^\\p{L}\\p{N}_-])","u").test(prompt));
-  if(missing.length)throw Error("Mention every attached reference in the prompt: "+missing.map(ref=>"@"+ref.alias).join(", "));
-  prompt=prompt.replace(/@([\p{L}\p{N}_-]+)/gu,(whole,name)=>{
-    if(!names.has(name)){unknown.push(whole);return whole;}
-    return names.get(name);
-  });
-  if(unknown.length)throw Error("Unknown mention: "+[...new Set(unknown)].join(", "));
-  const shotOne=/\[Shot\s+1\]/i.test(prompt);
-  const summaryLead=(prompt.match(/^[^\n.!?]+[.!?]?/)||[])[0]?.trim()||"Generate the requested target sequence.";
-  return "subject_definitions:\n"+(definitions.join("\n")||"No separate still-image subject is defined.")
-    +"\n\nsummary:\n[reference generation] "+summaryLead+" "+mediaNotes.join(" ")
-    +"\n\nretention_analysis:\n"+(retention.join("\n")||"Preserve the motion and sound qualities of the cited references.")
-    +"\n\ndetailed_description:\n"+(shotOne?prompt:"[Shot 1] "+prompt)
-    +"\n\noverall_soundscape:\nUse cited audio references and scene sounds described in the detailed_description, timed to their shots."
-    +"\n\nnon_diegetic_music:\nOnly music explicitly requested in the detailed_description.";
+  } catch (e) {
+    display.textContent = "Prompt preview: " + e.message;
+  }
+}
+
+function resolvedPrompt() {
+  const spec = currentRenderSpec();
+  if (!spec.source_prompt) throw Error("Write the scene prompt first.");
+  if (state.mode === "refs") {
+    if (!state.refs.length) throw Error("Add at least one reference.");
+    if (state.refs.length > 12) throw Error("H3 accepts at most 12 reference files.");
+    const videoDuration = videoReferenceDuration();
+    if (videoDuration !== null && videoDuration > 15.1)
+      throw Error("Video references total " + videoDuration.toFixed(2) + " seconds. H3 allows 15 seconds combined; trim at least " + (videoDuration - 15).toFixed(2) + " seconds and retry.");
+    if (state.refs.filter(ref => ref.kind === "audio" || ref.kind === "video" && ref.useAudio).length > 3)
+      throw Error("H3 accepts at most three audio references, including video soundtracks.");
+  } else if (state.mode === "frames") {
+    if (!state.first && !state.last) throw Error("Add a start frame, an end frame, or both.");
+  }
+  const res = H3PromptCompiler.compilePrompt(spec);
+  state.lastCompiledPrompt = res.compiled_prompt;
+  state.lastBindings = res.bindings;
+  updatePreviewLive();
+  return res.compiled_prompt;
 }
 function orderedRefs(){return ["image","video","audio"].flatMap(k=>state.refs.filter(r=>r.kind===k));}
 
 function graph(prompt,uploads,token) {
-  const refs=state.mode==="refs";
-  const g={
-    "1":{class_type:"UNETLoader",inputs:{unet_name:refs?modelRef:modelFL,weight_dtype:"default"}},
-    "2":{class_type:"MiniMaxH3SigmaShift",inputs:{model:["1",0],shift_video:12,shift_audio:3}},
-    "3":{class_type:"CLIPLoader",inputs:{clip_name:"qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",type:"minimax"}},
-    "4":{class_type:"VAELoader",inputs:{vae_name:"minimax_h3_video_vae_fp16.safetensors"}},
-    "5":{class_type:"VAELoader",inputs:{vae_name:"minimax_h3_audio_vae_fp32.safetensors"}},
-    "6":{class_type:refs?"MiniMaxH3ReferenceToVideo":"MiniMaxH3ImageToVideo",inputs:{clip:["3",0],vae:["4",0],prompt,width:state.width,height:state.height,length:Number($("duration").value)}},
-    "7":{class_type:"ConditioningZeroOut",inputs:{conditioning:["6",0]}},
-    "8":{class_type:"KSampler",inputs:{model:["2",0],seed:Number($("seed").value),steps:Number($("steps").value),cfg:1,sampler_name:"res_multistep",scheduler:"simple",positive:["6",0],negative:["7",0],latent_image:["6",1],denoise:1}},
-    "13":{class_type:"H3ReleaseForDecode",inputs:{samples:["8",0],token}},
-    "9":{class_type:"VAEDecode",inputs:{samples:["13",0],vae:["4",0]}},
-    "10":{class_type:"VAEDecodeAudio",inputs:{samples:["13",0],vae:["5",0]}},
-    "11":{class_type:"CreateVideo",inputs:{images:["9",0],fps:24,audio:["10",0]}},
-    "12":{class_type:"H3SaveVideo",inputs:{video:["11",0],filename_prefix:"video/h3_studio_"+token}},
+  const spec = currentRenderSpec();
+  spec.compiled_prompt = prompt;
+  spec.token = token;
+
+  const resolvedAssets = {
+    first: uploads.first,
+    last: uploads.last,
   };
-  let modelLink=["1",0];
-  state.loras.filter(item=>item.enabled).forEach((item,index)=>{
-    const id=String(50+index);
-    g[id]={class_type:"LoraLoaderModelOnly",inputs:{model:modelLink,lora_name:item.name,strength_model:item.strength}};
-    modelLink=[id,0];
-  });
-  if(method()==="turbo"){
-    g["60"]={class_type:"LoraLoaderModelOnly",inputs:{model:modelLink,lora_name:turboName,strength_model:0.9}};
-    modelLink=["60",0];
+  if (uploads.refs) {
+    state.refs.forEach(r => {
+      const serverFile = uploads.refs.get(r);
+      if (serverFile) {
+        resolvedAssets[r.alias] = serverFile;
+        if (r.assetId) resolvedAssets[r.assetId] = serverFile;
+      }
+    });
   }
-  g["2"].inputs.model=modelLink;
-  if(method()==="spectrum"){
-    g["61"]={class_type:"SpectrumApplyMiniMaxH3",inputs:{model:["2",0],enabled:true,blend_weight:0.5,degree:1,ridge_lambda:0.1,window_size:2,flex_window:0.75,warmup_steps:1,tail_actual_steps:1,max_history:8,debug:false,history_storage:"system_ram",offline_archive_storage:"system_ram",audio_blend_weight:0,offline_smoothing_replay:true}};
-    g["8"].inputs.model=["61",0];
-  }else if(method()==="motioncache"){
-    g["61"]={class_type:"MiniMaxH3MotionCache",inputs:{model:["2",0],reuse_threshold:0.15,motion_strength:1,warmup_steps:4,max_consecutive_skips:2,start_percent:0.15,end_percent:0.95,subsample_factor:8,verbose:false}};
-    g["8"].inputs.model=["61",0];
+  if (state.guides && uploads.guides) {
+    state.guides.forEach(g => {
+      resolvedAssets[g.asset_id] = uploads.guides.get(g) || g.filename;
+    });
   }
-  if(!refs){
-    if(uploads.first){g["15"]={class_type:"LoadImage",inputs:{image:uploads.first}};g["6"].inputs.first_frame=["15",0];}
-    if(uploads.last){g["16"]={class_type:"LoadImage",inputs:{image:uploads.last}};g["6"].inputs.last_frame=["16",0];}
-    return g;
-  }
-  Object.assign(g["6"].inputs,{audio_vae:["5",0],ref_image_size:$("refSize").value});
-  let id=20,idx={image:0,video:0,audio:0};
-  orderedRefs().forEach(ref=>{
-    const name=uploads.refs.get(ref);
-    if(ref.kind==="image"){
-      const current=String(id++);
-      g[current]={class_type:"LoadImage",inputs:{image:name}};
-      g["6"].inputs["ref_images.ref_image_"+idx.image++]=[current,0];
-    }else if(ref.kind==="video"){
-      const load=String(id++),split=String(id++),slot=idx.video++;
-      g[load]={class_type:"LoadVideo",inputs:{file:name}};
-      g[split]={class_type:"GetVideoComponents",inputs:{video:[load,0]}};
-      g["6"].inputs["ref_videos.ref_video_"+slot]=[split,0];
-      if(ref.useAudio)g["6"].inputs["ref_video_audios.ref_video_audio_"+slot]=[split,1];
-    }else{
-      const current=String(id++);
-      g[current]={class_type:"LoadAudio",inputs:{audio:name}};
-      g["6"].inputs["ref_audios.ref_audio_"+idx.audio++]=[current,0];
-    }
-  });
+
+  const { graph: g } = H3GraphBuilder.buildGraph(spec, resolvedAssets);
   return g;
 }
 
@@ -1364,9 +1391,28 @@ async function complete(file){
   if(meta.key&&Number.isFinite(meta.units)&&meta.units>0)samples.push({filename:file.filename,key:meta.key,units:meta.units,seconds:renderActual,at:Date.now()});
   try{localStorage.setItem(storeKey,JSON.stringify(samples.slice(-80)));}catch{}
   const entry={file,meta,kept:false,thumb:null};
+  const takeId = file.filename.replace(/^h3_studio_/, "").replace(/_[0-9]+_\.mp4$/, "");
+  entry.takeId = takeId;
   await post("/h3_studio/track",{filename:file.filename,render_seconds:renderActual,
     units:meta.units,sample_key:meta.key,settings:meta.settings}).catch(()=>{});
   state.results.unshift(entry);
+  if(typeof projectCtrl!=="undefined"&&projectCtrl&&projectCtrl.currentProject){
+    const proj=projectCtrl.currentProject;
+    const newTake={
+      take_id:takeId,
+      clip_id:state.currentClipId||("clip_"+takeId.slice(0,8)),
+      output_file:"video/"+file.filename,
+      effective_settings:meta.settings||{},
+      created_at:Date.now()/1000,
+      status:"completed"
+    };
+    const updatedTakes=[...(proj.takes||[]),newTake];
+    const updatedAccepted=[...(proj.accepted_take_ids||[]),takeId];
+    projectCtrl.saveCurrentProject({
+      takes:updatedTakes,
+      accepted_take_ids:updatedAccepted
+    }).then(updateProjectUI).catch(()=>{});
+  }
   const cleanup=cleanupUploads();
   setBusy(false);showVideo(entry);renderResults();
   focusWorkspace();
@@ -1394,6 +1440,23 @@ $("keep").onclick=async()=>{
 $("download").onclick=()=>{
   const entry=state.current;if(!entry)return;
   const a=document.createElement("a");a.href=videoURL(entry.file);a.download=entry.file.filename;document.body.append(a);a.click();a.remove();
+};
+if($("extendVideo")) $("extendVideo").onclick=()=>{
+  const entry=state.current;if(!entry)return;
+  const filename=entry.file.filename;
+  state.continuation={
+    source_take_id:entry.takeId||filename.slice(0,12),
+    source_output:filename,
+    context_frames:39,
+    audio_feather_ticks:8,
+  };
+  $("durationSeconds").value="7.3";
+  syncDuration();
+  info(`Extend Mode active for ${filename}. Next render will extend this clip from preserved AV context (+5.67s net new content).`);
+  $("prompt").value="";
+  $("prompt").placeholder="Describe the continuation movement and sound…";
+  $("prompt").focus();
+  updatePreviewLive();
 };
 $("discard").onclick=async()=>{
   const entry=state.current;if(!entry)return;
@@ -1597,8 +1660,190 @@ addEventListener("pagehide",event=>{
   // A refresh disconnects this client, but ComfyUI keeps the queued job and its uploaded inputs.
   if(!state.running)state.uploads.forEach(filename=>navigator.sendBeacon(api("/h3_studio/discard"),new Blob([JSON.stringify({filename})],{type:"application/json"})));
 });
+let projectCtrl = null;
+function initProjectController() {
+  const apiBase = localStorage.getItem(baseKey) || "";
+  projectCtrl = new H3ProjectController({
+    apiBase,
+    serverKey: apiBase || location.origin,
+    onProjectChanged: updateProjectUI,
+  });
+
+  const activePid = localStorage.getItem(projectCtrl._storageKey("active_project_id"));
+  if (activePid) {
+    projectCtrl.loadProject(activePid).catch(() => {
+      projectCtrl.createProject("Default Project", { width: state.width, height: state.height }).catch(() => {});
+    });
+  } else {
+    projectCtrl.createProject("Default Project", { width: state.width, height: state.height }).catch(() => {});
+  }
+
+  const handoffJson = sessionStorage.getItem("h3_lab.imported_handoff");
+  if (handoffJson) {
+    try {
+      const handoff = JSON.parse(handoffJson);
+      sessionStorage.removeItem("h3_lab.imported_handoff");
+      if (handoff && handoff.asset) {
+        applyQwenHandoff(handoff.asset, handoff.as_role);
+      }
+    } catch {}
+  }
+}
+
+function updateProjectUI(proj) {
+  if (!proj) return;
+  state.currentProject = proj;
+  state.activeProjectId = proj.project_id;
+  if ($("projectNameDisplay")) $("projectNameDisplay").textContent = `${proj.name || 'Project'} (${proj.project_id.slice(0, 8)})`;
+  if ($("projectRevision")) $("projectRevision").textContent = `Rev ${proj.revision || 1}`;
+  renderSequenceCard();
+}
+
+function applyQwenHandoff(asset, asRole) {
+  if (asRole === "start_frame") {
+    selectMode("frames");
+    const fakeFile = { name: asset.original_name || asset.path.split(/[\\/]/).pop(), size: 1024*1024 };
+    state.first = { file: fakeFile, url: api("/view?filename=" + encodeURIComponent(asset.path)) };
+    const box = $("firstBox");
+    if (box) {
+      box.replaceChildren();
+      const img = document.createElement("img");
+      img.src = state.first.url;
+      img.alt = "Start frame";
+      box.append(img);
+    }
+    $("clearFirst").classList.remove("hidden");
+    info("Imported Qwen image as start frame.");
+  } else {
+    selectMode("refs");
+    const alias = asset.alias || aliasName(asset.original_name || "qwen_ref");
+    const ref = {
+      alias,
+      kind: "image",
+      role: "custom",
+      instruction: "Use visual elements from this Qwen image",
+      assetId: asset.asset_id,
+      file: { name: asset.original_name || asset.path.split(/[\\/]/).pop(), size: 1024*1024 },
+      previewUrl: api("/view?filename=" + encodeURIComponent(asset.path)),
+      uploadReady: true,
+      meta: { name: asset.path }
+    };
+    state.refs.push(ref);
+    renderRefs();
+    info(`Imported Qwen image as reference @${alias}.`);
+  }
+  updatePreviewLive();
+  saveDraft();
+}
+
+function renderSequenceCard() {
+  const card = $("sequenceCard");
+  const strip = $("clipStrip");
+  const durationSpan = $("sequenceDuration");
+  if (!card || !strip) return;
+
+  const proj = state.currentProject;
+  const acceptedTakeIds = proj?.accepted_take_ids || [];
+  const takes = proj?.takes || [];
+  const acceptedTakes = acceptedTakeIds.map(id => takes.find(t => t.take_id === id)).filter(Boolean);
+
+  if (!acceptedTakes.length && !state.results.length) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  strip.replaceChildren();
+
+  let totalFrames = 0;
+  acceptedTakes.forEach((take, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "prompt-asset used";
+    chip.style.display = "flex";
+    chip.style.alignItems = "center";
+    chip.style.gap = "8px";
+
+    const frames = take.effective_settings?.frames || 124;
+    totalFrames += (idx === 0 ? frames : Math.max(0, frames - (take.effective_settings?.context_frames || 39)));
+
+    chip.innerHTML = `<strong>Clip ${idx + 1}</strong> <span>Take ${take.take_id.slice(0, 6)}</span> <small>${frames}f</small>`;
+    strip.append(chip);
+  });
+
+  const totalSec = (totalFrames / 24).toFixed(2);
+  if (durationSpan) durationSpan.textContent = `${acceptedTakes.length} clip(s) · ${totalSec}s total`;
+}
+
+if ($("btnNewProject")) {
+  $("btnNewProject").onclick = async () => {
+    const name = prompt("Project name:", "New H3 Project");
+    if (!name) return;
+    try {
+      await projectCtrl.createProject(name, { width: state.width, height: state.height });
+      info(`Created project "${name}".`);
+    } catch (e) {
+      info("Failed to create project: " + e.message, true);
+    }
+  };
+}
+if ($("btnSaveProject")) {
+  $("btnSaveProject").onclick = async () => {
+    if (!projectCtrl || !projectCtrl.currentProject) {
+      await projectCtrl.createProject("Default Project", { width: state.width, height: state.height });
+    }
+    try {
+      const currentTakeId = state.current?.takeId;
+      const updates = {
+        canvas: { width: state.width, height: state.height },
+        fps: 24,
+      };
+      if (currentTakeId && !projectCtrl.currentProject.accepted_take_ids?.includes(currentTakeId)) {
+        updates.accepted_take_ids = [...(projectCtrl.currentProject.accepted_take_ids || []), currentTakeId];
+      }
+      await projectCtrl.saveCurrentProject(updates);
+      info("Project saved successfully.");
+    } catch (e) {
+      info("Failed to save project: " + e.message, true);
+    }
+  };
+}
+if ($("btnExportProject")) {
+  $("btnExportProject").onclick = async () => {
+    try {
+      const url = await projectCtrl.exportBundle();
+      window.open(url, "_blank");
+    } catch (e) {
+      info("Export bundle failed: " + e.message, true);
+    }
+  };
+}
+if ($("btnAssembleSequence")) {
+  $("btnAssembleSequence").onclick = async () => {
+    const proj = state.currentProject;
+    if (!proj || !proj.accepted_take_ids?.length) {
+      info("No accepted takes in the current sequence to assemble.", true);
+      return;
+    }
+    const status = $("sequenceExportStatus");
+    if (status) status.textContent = "Assembling sequence with FFmpeg (single AAC encode)...";
+    try {
+      const res = await post(`/h3_studio/lab/projects/${encodeURIComponent(proj.project_id)}/assemble`, {
+        accepted_take_ids: proj.accepted_take_ids
+      });
+      if (status) status.textContent = `Assembled ${res.assembly?.clips_joined || proj.accepted_take_ids.length} clips into ${res.output_file} (${res.assembly?.duration?.toFixed(2)}s).`;
+      loadLibrary(true);
+    } catch (e) {
+      if (status) status.textContent = "Assembly failed: " + e.message;
+      info("Sequence assembly error: " + e.message, true);
+    }
+  };
+}
+
+$("prompt").addEventListener("input", updatePreviewLive);
+
 const missingInputs=restoreDraft();
 selectMode(state.mode);renderEstimates();
+updatePreviewLive();
 if(missingInputs)info("Draft restored. Reattach your frame or reference files before generating.");
 checkConnection();connectSocket();
 pollQueue();
+initProjectController();

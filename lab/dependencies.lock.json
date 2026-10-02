@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "comfyui": {
+    "pinned_commit": "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251",
+    "pinned_date": "2026-09-24",
+    "candidate_release": "v0.38.0 (6b747c0428c343e1417219641db93a4fb7cb69ae)",
+    "selected_pin": "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251",
+    "rationale": "Audited H3 VAE and Qwen3VL source files are identical between 3b4c0b0 and v0.38.0. 3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251 is the proven baseline with identical VAE tile fix and stable native AddGuide schema."
+  },
+  "upstream_baseline": {
+    "repository": "https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield",
+    "commit": "fd7e0db3b046fe21d5b55c1d51cbf874c92f0940",
+    "branch": "main",
+    "license": "MIT"
+  },
+  "candidate_engines": {
+    "primary": {
+      "name": "ComfyUI-H3-Motion-Context-MultiRef",
+      "repository": "https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef",
+      "commit": "361624fb406b63eb6694442eac6c895fc1533a70",
+      "license": "GPL-3.0",
+      "role": "Low-level masked AV continuation",
+      "nodes": [
+        "MiniMaxH3GeneratedAVMaskedContext",
+        "MiniMaxH3ExistingVideoMaskedContext",
+        "MiniMaxH3AssembleExtension"
+      ]
+    },
+    "alternative": {
+      "name": "ComfyUI_MiniMax_H3_Extender",
+      "repository": "https://github.com/tritant/ComfyUI_MiniMax_H3_Extender",
+      "commit": "67d3c127fcae80d2e56264fb64c450186b55fd78",
+      "license": "Apache-2.0",
+      "role": "Alternative extender spike (contains layout/payload compatibility monkey patches)"
+    }
+  },
+  "optional_experiments": {
+    "upscaler": {
+      "name": "Comfyui_Minimax_h3_latent_Upscaler",
+      "repository": "https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler",
+      "commit": "40316cf008b2fd8663263270669eb4da23f89d2c",
+      "license": "MIT",
+      "status": "investigation_pending"
+    },
+    "audio_refine": {
+      "name": "ComfyUI-H3-AudioRefine",
+      "repository": "https://github.com/Adudeguyman/ComfyUI-H3-AudioRefine",
+      "commit": "d78d34f2f1100b0422047e9d784a3bdb4e1061d3",
+      "license": "MIT",
+      "status": "investigation_pending"
+    }
+  },
+  "native_schemas": {
+    "MiniMaxH3ImageToVideo": {
+      "inputs": ["clip", "vae", "prompt", "width", "height", "length", "first_frame (optional)", "last_frame (optional)"],
+      "outputs": ["positive", "latent"]
+    },
+    "MiniMaxH3ReferenceToVideo": {
+      "inputs": ["clip", "vae (optional)", "audio_vae (optional)", "prompt", "width", "height", "length", "ref_image_size", "ref_images (autogrow)", "ref_videos (autogrow)", "ref_video_audios (autogrow)", "ref_audios (autogrow)"],
+      "outputs": ["positive", "latent"]
+    },
+    "MiniMaxH3AddGuide": {
+      "inputs": ["positive", "vae (optional)", "audio_vae (optional)", "latent", "image (optional)", "audio (optional)", "frame_idx"],
+      "outputs": ["positive"]
+    }
+  }
+}
