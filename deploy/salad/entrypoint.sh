@@ -49,8 +49,7 @@ restore_data() {
     [[ -n "$REMOTE" ]] || return 0
     command -v rclone >/dev/null || die "rclone is missing from the image."
     log "Restoring H3 state from external storage."
-    rclone copy "$REMOTE/output/video" "$DATA_ROOT/output/video" "${rclone_common[@]}" || die "Could not restore output library."
-    rclone copy "$REMOTE/output/images" "$DATA_ROOT/output/images" "${rclone_common[@]}" || die "Could not restore image library."
+    rclone copy "$REMOTE/output" "$DATA_ROOT/output" "${rclone_common[@]}" || die "Could not restore output, projects and continuation contexts."
     rclone copy "$REMOTE/input" "$DATA_ROOT/input" "${rclone_common[@]}" || die "Could not restore inputs."
     rclone copy "$REMOTE/user/default/workflows" "$DATA_ROOT/user/default/workflows" "${rclone_common[@]}" || die "Could not restore workflows."
 }
@@ -86,9 +85,7 @@ download_models() {
 
 sync_once() {
     [[ -n "$REMOTE" ]] || return 0
-    rclone sync "$DATA_ROOT/output/video" "$REMOTE/output/video" "${rclone_common[@]}" \
-        --exclude '*.tmp*' --exclude '*.part' --min-age 5s
-    rclone sync "$DATA_ROOT/output/images" "$REMOTE/output/images" "${rclone_common[@]}" \
+    rclone sync "$DATA_ROOT/output" "$REMOTE/output" "${rclone_common[@]}" \
         --exclude '*.tmp*' --exclude '*.part' --min-age 5s
     rclone sync "$DATA_ROOT/input" "$REMOTE/input" "${rclone_common[@]}" \
         --exclude '*.tmp*' --exclude '*.part' --min-age 5s

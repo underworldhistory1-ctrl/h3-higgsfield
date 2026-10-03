@@ -50,6 +50,11 @@ RUNTIME_FILES=(
     deploy/make_h3_landing.py deploy/verify_h3_server.py
     docs/COMPATIBILITY_MATRIX_AR.md docs/GRAPH_MAP.md docs/UX_FLOW.md
 )
+mapfile -t V2_RUNTIME_FILES < "$PROJECT_ROOT/deploy/v2_runtime_files.txt"
+for index in "${!V2_RUNTIME_FILES[@]}"; do
+    V2_RUNTIME_FILES[$index]="${V2_RUNTIME_FILES[$index]%$'\r'}"
+done
+RUNTIME_FILES+=("${V2_RUNTIME_FILES[@]}")
 if [[ ! -f "$COMFY_ROOT/main.py" || ! -d "$COMFY_ROOT/comfy_extras" ]]; then
     echo "Not a ComfyUI checkout: $COMFY_ROOT" >&2
     exit 1
@@ -111,6 +116,10 @@ fi
 
 CUSTOM_NODES="$COMFY_ROOT/custom_nodes"
 H3_STUDIO="$CUSTOM_NODES/h3_studio"
+if [[ -e "$CUSTOM_NODES/h3_studio_v2" ]]; then
+    echo "A separate V2 copy already exists here. Upgrade that copy in place; duplicate H3 nodes are unsupported." >&2
+    exit 1
+fi
 mkdir -p "$CUSTOM_NODES"
 command -v tar >/dev/null || { echo "tar is required to install H3 Studio from this prepared bundle." >&2; exit 1; }
 if [[ "$PROJECT_ROOT" == "$H3_STUDIO" ]]; then
@@ -126,12 +135,12 @@ if [[ -e "$H3_STUDIO" ]]; then
         exit 1
     fi
     BACKUP="$H3_STUDIO/.h3-backup/$(date +%Y%m%d-%H%M%S)-$$"
-    mkdir -p "$BACKUP/web"
-    cp "$H3_STUDIO/__init__.py" "$BACKUP/__init__.py"
-    cp "$H3_STUDIO/web/index.html" "$BACKUP/web/index.html"
-    if [[ -f "$H3_STUDIO/web/studio.js" ]]; then
-        cp "$H3_STUDIO/web/studio.js" "$BACKUP/web/studio.js"
-    fi
+    for source_file in "${RUNTIME_FILES[@]}"; do
+        if [[ -f "$H3_STUDIO/$source_file" ]]; then
+            mkdir -p "$BACKUP/$(dirname "$source_file")"
+            cp "$H3_STUDIO/$source_file" "$BACKUP/$source_file"
+        fi
+    done
     tar -cf - -C "$PROJECT_ROOT" "${RUNTIME_FILES[@]}" | tar -xf - -C "$H3_STUDIO"
     echo "Updated H3 Studio from the prepared bundle; previous UI/backend: $BACKUP"
 else
@@ -180,6 +189,10 @@ if [[ "$WITH_SPEED_OPTIONS" -eq 1 ]]; then
         "https://github.com/starsFriday/ComfyUI-MiniMax-H3-MotionCache.git" \
         "bc2894102b2486661884371259a27080b0b137bf"
 fi
+
+install_speed_node "ComfyUI-H3-Motion-Context-MultiRef" \
+    "https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef.git" \
+    "361624fb406b63eb6694442eac6c895fc1533a70"
 
 echo "Downloading/reusing H3 T2V model files into persistent ComfyUI storage..."
 DOWNLOAD_ARGS=("$COMFY_ROOT")

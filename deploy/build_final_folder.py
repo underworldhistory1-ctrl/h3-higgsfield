@@ -31,6 +31,9 @@ SOURCE_FILES = (
     "tests/test_qwen_downloader.py", "tests/test_qwen_image.py", "tests/test_qwen_routes.py",
 )
 
+SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
+SOURCE_FILES = tuple(dict.fromkeys((*SOURCE_FILES, *(SOURCE_ROOT / "deploy/v2_runtime_files.txt").read_text(encoding="utf-8").splitlines(), *(p.relative_to(SOURCE_ROOT).as_posix() for p in (SOURCE_ROOT / "tests").rglob("*") if p.suffix in {".py", ".cjs"}))))
+
 
 def sha256(path):
     h = hashlib.sha256()
@@ -70,6 +73,8 @@ def main():
         target = source_target / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / name, target)
+        if target.suffix == ".sh" or name == "deploy/v2_runtime_files.txt":
+            target.write_bytes(target.read_bytes().replace(b"\r\n", b"\n"))
     for original, target in (
         (source / "AGENTS.md", output / "AGENTS.md"),
         (source / "START_HERE_AR.md", output / "START_HERE_AR.md"),
@@ -104,15 +109,17 @@ def main():
     files = sorted(p for p in output.rglob("*")
                    if p.is_file() and p.name != "MANIFEST_SHA256.json")
     manifest = {
-        "project": "H3 Studio", "release": "2026-09-25-final",
+        "project": "H3 Studio", "release": "2026-10-03-v2",
         "tested_gpu": "NVIDIA GeForce RTX 5090, 32 GB",
-        "tested_comfy_revision": "73c9bad4d21e7addbe1d13bc92eee0f1431b017d",
+        "tested_comfy_revision": "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251",
         "prepared_comfy_revision": "3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251",
         "h3_vae_tile_fix_pr": 16436,
         "qwen_image_profiles": ["int8", "bf16"],
         "qwen_model_revision": "9a44dbdb47cefd046be9c0a13476192f34c8db8e",
         "spectrum_revision": "5161f0457bc8c52535212d6783eee73f439e1537",
         "motioncache_revision": "bc2894102b2486661884371259a27080b0b137bf",
+        "context_engine_revision": "361624fb406b63eb6694442eac6c895fc1533a70",
+        "context_engine_vendored": False,
         "contains_model_weights": False,
         "files": {p.relative_to(output).as_posix(): {"bytes": p.stat().st_size, "sha256": sha256(p)}
                   for p in files},

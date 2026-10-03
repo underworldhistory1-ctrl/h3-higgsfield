@@ -34,6 +34,10 @@ RUNTIME_FILES = (
     "deploy/make_h3_landing.py", "deploy/verify_h3_server.py",
     "docs/COMPATIBILITY_MATRIX_AR.md", "docs/GRAPH_MAP.md", "docs/UX_FLOW.md",
 )
+RUNTIME_FILES += tuple((PROJECT / "deploy" / "v2_runtime_files.txt").read_text(encoding="utf-8").splitlines())
+CONTEXT_NODE = ("ComfyUI-H3-Motion-Context-MultiRef", "https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef.git",
+                "361624fb406b63eb6694442eac6c895fc1533a70")
+
 WORKFLOWS = (
     "h3_t2v_ui.json", "h3_t2v_api.json", "h3_t2v_smoke_ui.json", "h3_t2v_smoke_api.json",
 )
@@ -226,6 +230,8 @@ def ensure_python_env(python, root, fresh):
 
 def copy_runtime(root):
     target = root / "custom_nodes" / "h3_studio"
+    if (root / "custom_nodes" / "h3_studio_v2").exists():
+        raise RuntimeError("A separate V2 copy already exists in this ComfyUI process. Upgrade that copy in place; do not install duplicate H3 nodes.")
     if PROJECT.resolve() == target.resolve():
         raise RuntimeError("Run from a separate source checkout, outside custom_nodes/h3_studio")
     for name in RUNTIME_FILES:
@@ -236,7 +242,7 @@ def copy_runtime(root):
             raise RuntimeError("Existing custom_nodes/h3_studio is not a recognizable H3 install; not overwriting it")
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         backup = target / ".h3-backup" / stamp
-        for name in ("__init__.py", "h3_video_save.py", "web/index.html", "web/studio.js"):
+        for name in RUNTIME_FILES:
             old = target / name
             if old.is_file():
                 saved = backup / name
@@ -379,7 +385,7 @@ def main():
         print(f"Warning: only {free_gb:.1f} GiB free; first-time H3 weights need roughly 100 GiB of free space.")
     copy_runtime(root)
     call(python, PROJECT / "deploy" / "make_h3_landing.py")
-    for name, source, revision in SPEED_NODES:
+    for name, source, revision in (*SPEED_NODES, CONTEXT_NODE):
         speed_node(root, git, name, source, revision)
     if subprocess.run([str(python), "-c", "import huggingface_hub"],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:

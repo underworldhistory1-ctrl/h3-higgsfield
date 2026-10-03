@@ -1,3 +1,7 @@
+# H3 Studio V2 — النسخة الأساسية
+
+ابدأ بـ[دليل الترقية والرجوع](docs/V2_UPGRADE_AR.md). نسخة V2 واحدة لكل عملية ComfyUI؛ حافظ على مشاريع ونتائج النسخة الحالية عند التحديث.
+
 # ابدأ من هنا — H3 Higgsfield
 
 للتثبيت المباشر من GitHub: على خادم NVIDIA Linux استخدم `bash install.sh`، وعلى Windows استخدم `install.ps1` من PowerShell مع `-ComfyRoot` لمسار ComfyUI Portable أو ComfyUI العادي، كما في README. طريقة نقل الفولدر بالأسفل متاحة أيضًا لاستعادة مكتبة الفيديوهات الشخصية.

@@ -1,6 +1,6 @@
-# H3 Higgsfield V2 — isolated reviewed lab
+# H3 Higgsfield · V2
 
-**V2 installation:** use [the isolated server guide](docs/lab/INSTALL_AND_ROLLBACK.md) and [review evidence](docs/lab/TEST_REPORT.md). The original installers below belong to the production baseline; do not use them to overwrite production. V2 keeps its own process, port, projects and outputs. GPU generation and seam quality remain pending live acceptance.
+**V2 is the main release.** See [upgrade and rollback notes](docs/V2_UPGRADE_AR.md) before updating an existing instance. The installers include V2 projects, temporal guides and the separately pinned continuation engine. Keep one H3 Studio copy per ComfyUI process. Publishing this release does not move or replace your server data. See [review evidence](docs/lab/FOLLOWUP_REVIEW_2026-10-03.md) for tested paths and remaining quality boundaries.
 
 An independent, creator-friendly interface for **MiniMax H3 video with native audio** and **Qwen Image 2.1 creation/editing**. ComfyUI runs behind the pages; creators never need the node canvas. This project is not affiliated with Higgsfield.
 
@@ -38,7 +38,7 @@ The top navigation separates **Video** and **Image**. Video retains the complete
 | Frames | Prompt + start and/or end image | FL2VA |
 | References | Prompt + named images, videos, or audio (`@name`) | Ref2VA |
 
-- A single English UI for prompts, output size, duration, steps, render method, and optional LoRAs. Enter a duration from 5 to 15.1 seconds; Studio shows the nearest H3-supported frame count and actual duration before submission.
+- A single English UI for prompts, output size, duration, sampling steps (8–100; default 20), render method, and optional LoRAs. Enter a duration from 5 to 15.1 seconds; Studio shows the nearest H3-supported frame count and actual duration before submission.
 - Attached references have an **Insert @name into prompt** button. The video workspace also shows named image, video, and audio references next to the prompt; start/end frames appear there as `@start` and `@end`.
 - Video references at other frame rates are converted to **24 fps** on upload; their playback speed and available soundtrack are retained. H3's combined video-reference limit is 15 seconds.
 - Original quality by default. Spectrum, MotionCache, and the FL2VA Turbo LoRA are prepared as separate, optional choices; they can change the result. Installed LoRAs appear as optional switches.

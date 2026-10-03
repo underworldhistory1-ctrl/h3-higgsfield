@@ -4,6 +4,7 @@ FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 ARG DEBIAN_FRONTEND=noninteractive
 ARG COMFY_REVISION=3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251
 ARG SPECTRUM_REVISION=5161f0457bc8c52535212d6783eee73f439e1537
+ARG CONTEXT_REVISION=361624fb406b63eb6694442eac6c895fc1533a70
 ARG MOTION_CACHE_REVISION=bc2894102b2486661884371259a27080b0b137bf
 
 ENV COMFY_ROOT=/opt/ComfyUI \
@@ -34,7 +35,10 @@ RUN mkdir -p "${COMFY_ROOT}/custom_nodes" \
     && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-Spectrum-MiniMax-H3" checkout --detach -q "${SPECTRUM_REVISION}" \
     && git clone --filter=blob:none https://github.com/starsFriday/ComfyUI-MiniMax-H3-MotionCache.git \
        "${COMFY_ROOT}/custom_nodes/ComfyUI-MiniMax-H3-MotionCache" \
-    && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-MiniMax-H3-MotionCache" checkout --detach -q "${MOTION_CACHE_REVISION}"
+    && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-MiniMax-H3-MotionCache" checkout --detach -q "${MOTION_CACHE_REVISION}" \
+    && git clone --filter=blob:none https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef.git \
+       "${COMFY_ROOT}/custom_nodes/ComfyUI-H3-Motion-Context-MultiRef" \
+    && git -C "${COMFY_ROOT}/custom_nodes/ComfyUI-H3-Motion-Context-MultiRef" checkout --detach -q "${CONTEXT_REVISION}"
 
 COPY --chown=10001:10001 . "${COMFY_ROOT}/custom_nodes/h3_studio"
 COPY deploy/salad/nginx.conf.template /opt/h3-salad/nginx.conf.template
