@@ -4,6 +4,7 @@ web/lab-ui.js
 web/h3/graph-builder.js
 web/h3/project-controller.js
 web/h3/prompt-compiler.js
+web/h3/uuid.js
 h3_lab/assembly.py
 h3_lab/assets.py
 h3_lab/capabilities.py

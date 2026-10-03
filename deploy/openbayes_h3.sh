@@ -149,6 +149,7 @@ install_extension() {
     local files=(
         __init__.py h3_video_save.py qwen_image.py LICENSE README.md
         web/index.html web/studio.js web/image.html web/image-studio.js
+        web/h3/uuid.js
         workflows/h3_t2v_ui.json workflows/h3_t2v_api.json
         workflows/h3_t2v_smoke_ui.json workflows/h3_t2v_smoke_api.json
         scripts/verify_h3_video.py
