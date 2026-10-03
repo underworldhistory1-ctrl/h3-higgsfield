@@ -254,3 +254,18 @@ test('repeated ordinary headings stay prose in all guided modes', () => {
     if(mode==='refs')assert.match(result.compiled_prompt, /<Subject 1> is .*<Picture 1>/);
   }
 });
+
+
+test('shared native audio and summary headings remain guided prose in every mode', () => {
+  for (const mode of ['text', 'frames', 'refs']) {
+    const mention = mode === 'refs' ? '@hero' : mode === 'frames' ? '@start' : 'the hero';
+    const source = `summary:\n${mention} enters.\noverall_soundscape:\nWind.\nnon_diegetic_music:\nKeep the score serious.\noverall_soundscape:\nDistant fire.`;
+    const spec = {mode, prompt_mode:'guided', source_prompt:source, frames:{first:'a.png'}, references:[{alias:'hero',kind:'image',role:'character identity'}]};
+    const result = compilePrompt(spec);
+    assert.ok(result.compiled_prompt.includes('Keep the score serious.'));
+    assert.ok(result.compiled_prompt.includes('Distant fire.'));
+    if(mode === 'refs') assert.match(result.compiled_prompt, /<Subject 1> is .*<Picture 1>/);
+    else assert.match(result.compiled_prompt, /^integrated_multimodal_description:/m);
+    assert.throws(() => compilePrompt({...spec, prompt_mode:'structured'}), /Duplicate section|missing native section/);
+  }
+});

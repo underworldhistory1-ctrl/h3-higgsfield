@@ -118,7 +118,8 @@
     }
 
     const expectedSections = mode === 'refs' ? NATIVE_REF_SECTIONS : NATIVE_TEXT_SECTIONS;
-    const nativeNames = [...new Set([...NATIVE_REF_SECTIONS, ...NATIVE_TEXT_SECTIONS])];
+    // Shared prose headings (summary, sound and music) do not identify a native payload.
+    const nativeNames = ['subject_definitions', 'retention_analysis', 'detailed_description', 'integrated_multimodal_description'];
     const hasNativeSections = new RegExp('^(?:' + nativeNames.join('|') + '):\\s*', 'im').test(source);
     // Ordinary prose headings (including repeated Action/Camera headings) are content.
     const originalSections = promptMode === 'structured' || hasNativeSections ? parseStructuredSections(source) : null;
