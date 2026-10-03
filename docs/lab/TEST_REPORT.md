@@ -1,100 +1,33 @@
-# H3 Studio Lab — Test & Verification Report
+# V2 verification report — 2026-10-03
 
-## Verification Ladder Overview
+The original f1042d2 helper-only success report is superseded. Main UI/backend integration, native AV tensor shapes, imported output paths, cancellation races and project recovery defects were reproduced and repaired.
 
-| Layer | Environment | Status | Results |
-|---|---|---|---|
-| **1. Static & Syntax** | Local CPU | PASSED | `web/studio.js` and `web/image-studio.js` pass `node --check` |
-| **2. Local Unit Tests** | Local CPU (Python 3.14) | PASSED | 44/44 tests passed (`python -m unittest discover -s tests`) |
-| **3. Contract & Invariants** | Local CPU (Node.js v24) | PASSED | 15/15 tests passed (`node --test tests/js/*.test.cjs`) |
-| **4. Live GPU Runtime** | Authorized Online Test Server | PENDING | Awaiting remote test server authorization / credentials |
+## Verified CPU boundaries
 
-> **Mandatory Policy Adherence:**
-> No local GPU model loading, torch CUDA inference, or test renders were conducted on the user's personal PC. All inference is strictly isolated to an authorized online test server.
+- Python service, HTTP, filesystem, project/asset/context integrity, real FFmpeg synthetic-media assembly and standby isolation tests: 80 tests passed.
+- JavaScript compiler, graph and project controller contracts: 26 passing tests.
+- Real Chromium exercised the connected video interface with an isolated CPU backend: 13 journeys passing with zero uncaught JavaScript errors after the final video standby guards.
+- Additional real Chromium image acceptance passes create/edit graph submission, zero seed, duplicate-click prevention, queued-only cancellation, running-job protection, lost-acknowledgement recovery and standby refusal; zero uncaught JavaScript errors.
+- Browser journeys cover restored frames/references, neutral custom roles, fitted server images, Qwen image handoff, timed image/audio/video guides, imported continuation, request acknowledgement loss, and cancellation before and after backend acceptance.
+- Synthetic media validation verifies real decoding, audio/video timing and exact frame counts. Example two clips: 24 + 24 - 6 overlap = 42 frames. The continuation accounting fixture verifies 175 + 136 + 136 = 447 frames (18.625 seconds at 24 fps).
+- CPU safetensor tests use native H3 video [B,24,T,H/16,W/16] and audio [B,32,2,T] contracts, hashes, floating dtype, checkpoint compatibility and recovery metadata. They do not prove native GPU integration.
+- Standby tests establish no torch/Comfy import, no production storage adoption, approved production GET allowlist, and inference mutation rejection with no phantom job creation.
 
----
+## Online inspection
 
-## Detailed Test Results
+The authorized HyperAI server has production H3 on 8188, LTX backend on 8189 and LTX UI on 7860. The GPU was busy and container memory near its limit. No inference, interrupt, queue mutation, package upgrade, model download or production service restart was performed. V2 uses isolated source/data and port 8190; editing standby deliberately blocks inference.
 
-### 1. Python Unit & Service Test Suite (`tests/`)
+## Pending GPU acceptance — do not claim passed
 
-Ran 44 tests across 7 test modules:
+Run sequentially only after current production completes and manual resource checks pass:
 
-```text
-Ran 44 tests in 1.230s
-OK
-```
+1. Normal FL2VA text and start/end frames; playable MP4 and native audio, correct dimensions/frame count.
+2. Ref2VA neutral custom image, video and audio references; confirm exact tag binding and audible guidance.
+3. Native timed image/audio/video guides; inspect timing, identity and frame positioning against requested guide times.
+4. Direct saved AV-latent Extend with image references; correct checkpoint/canvas match and exact net-added frames.
+5. Re-encoded video-context Extend; correct 24 fps handling, trim offset and reference/guide placement.
+6. Three-take sequence assembly: exact duration, no accumulating AAC padding, inspect cuts, lip sync and perceptual seam quality.
+7. Live request recovery and cancellation with only V2-owned jobs; production and LTX jobs must remain intact.
+8. Qwen image generation/handoff if an actual complete profile is installed. Missing models must stay unavailable.
 
-- **`test_h3_jobs.py`** (6 tests):
-  - Idempotent submission: same `request_id` + same payload returns existing job.
-  - Idempotent conflict: same `request_id` + different payload returns HTTP 409.
-  - Distinct cancellation states: `cancel_requested` is not `cancelled` until confirmed.
-  - Foreign job protection: ComfyUI global interrupt refused when another job owns the worker.
-  - Delayed reply recovery: client crash gap reclaims prompt ID from ComfyUI history.
-  - Unknown job state: retains asset leases until queue reconciliation.
-- **`test_h3_asset_leases.py`** (3 tests):
-  - Leased assets survive garbage collection and cleanup routines.
-  - Expired leases allow cleanup only after job terminal state is confirmed.
-  - Multi-job shared leases respect reference counting.
-- **`test_h3_projects.py`** (4 tests):
-  - Project manifest atomic round-trip and revision tracking.
-  - Optimistic concurrency: outdated `expected_revision` returns HTTP 409 conflict.
-  - Directory traversal protection: ZIP bundles reject `../../` path escapes.
-  - Qwen image handoff creates a detached, project-owned asset copy.
-- **`test_h3_contexts.py`** (3 tests):
-  - Safetensors AV latent serialization round-trip without precision loss.
-  - Tensor shapes and stream ordering verified (`[1, 16, T, H, W]` video and `[1, C, T]` audio).
-  - Fingerprint mismatch detection rejects incompatible dimensions or model weights.
-- **`test_h3_timing.py`** (4 tests):
-  - Validates `17k + 5` frame grid (124, 141, 158, 175, 192, 362 frames).
-  - Validates `51k + 39` context lengths (default 39 frames = 1.625s).
-  - Invariant test: 175 frames + two 136-frame extensions = exactly 447 frames (18.625s).
-  - Absolute sample alignment for 40Hz audio latents and 24 fps video.
-- **`test_h3_routes.py`** (3 tests):
-  - Route registration and responses under `/h3_studio/lab/*`.
-  - Project CRUD and export bundle downloads.
-  - Sequence assembly endpoint dispatch.
-- **Baseline Suite** (21 tests):
-  - Verified 100% backward compatibility of existing unittests.
-
----
-
-### 2. JavaScript Invariant Test Suite (`tests/js/`)
-
-Ran 15 tests across 3 suites:
-
-```text
-ℹ tests 15
-ℹ suites 3
-ℹ pass 15
-ℹ fail 0
-```
-
-- **Prompt Compiler (`prompt-compiler.test.cjs`)**:
-  - `custom` role compiles neutral `<Picture N>` tags without forced retention or `<Subject N>`.
-  - Structured prompt pass-through: never wrapped in duplicate native sections.
-  - Reference limits enforced: 12 total files, 9 images, 3 audio references.
-  - Mentions validated: missing `@alias` or references to nonexistent native tokens raise actionable pre-submission errors.
-- **Graph Builder (`graph-builder.test.cjs`)**:
-  - Node collision prevention: first frame = node 15, last frame = node 16, release = node 13.
-  - Paired video soundtracks: audio slot index exactly matches video slot index.
-  - Temporal guides: chains `MiniMaxH3AddGuide` positive conditioning to KSampler.
-  - Continuation: links `MiniMaxH3GeneratedAVMaskedContext` for generated clips and `MiniMaxH3ExistingVideoMaskedContext` for imported clips.
-- **Cancellation & Submission (`cancellation.test.cjs`)**:
-  - Qwen HTTP 500 cancellation preserves job identity and does not purge input state.
-  - In-flight submission cancellation prevents orphaned server jobs.
-
----
-
-## Live Acceptance Matrix Status
-
-| Case | Main Assertion | Test Status | Notes |
-|---|---|---|---|
-| Text Original short | Native video/audio generation | Pending Online GPU | Ready for remote smoke |
-| Frames first+last | No node collision; guides attached | Passed Local Invariant | Graph builder verified |
-| References Custom | Neutral compilation; no forced retention | Passed Local Compiler | Compiler verified |
-| Temporal Guides | AddGuide positive chain | Passed Local Invariant | Graph builder verified |
-| Sequence (447 frames) | 175 + 136 + 136 exact frames | Passed Timing Math | Math & assembly verified |
-| Qwen Handoff | Detached asset copy into H3 | Passed Local Service | Service & UI verified |
-| Job Cancellation | Distinct requested vs confirmed | Passed Unit & Mock | Service & UI verified |
-| Sequence Stitching | Single-pass AAC without compound delay | Passed Assembly Test | FFmpeg script verified |
+Latent Upscaler and AudioRefine remain documented investigations, not implemented controls. No GPU output or quality judgment is inferred from mocks, CPU tensors, syntax checks or a responsive page.

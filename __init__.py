@@ -26,9 +26,12 @@ import uuid
 from aiohttp import web
 
 import folder_paths
+import nodes
 from server import PromptServer
 from .h3_video_save import H3LoadSavedLatent, H3ReleaseForDecode, H3SaveVideo
 from .h3_lab.routes import register_lab_routes
+from .h3_continuation import NODE_CLASS_MAPPINGS as LAB_NODE_CLASS_MAPPINGS
+from .h3_queue_bridge import ComfyQueueBridge
 from .qwen_image import (
     NODE_CLASS_MAPPINGS as QWEN_NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS as QWEN_NODE_DISPLAY_NAME_MAPPINGS,
@@ -46,6 +49,7 @@ NODE_CLASS_MAPPINGS = {"H3SaveVideo": H3SaveVideo, "H3ReleaseForDecode": H3Relea
 NODE_DISPLAY_NAME_MAPPINGS = {"H3SaveVideo": "H3 Save Video", "H3ReleaseForDecode": "H3 Release For Decode",
                               "H3LoadSavedLatent": "H3 Load Saved Latent"}
 NODE_CLASS_MAPPINGS.update(QWEN_NODE_CLASS_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(LAB_NODE_CLASS_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS.update(QWEN_NODE_DISPLAY_NAME_MAPPINGS)
 WEB_DIRECTORY = "./web"
 
@@ -303,8 +307,8 @@ async def upload_ref(request):
             raise ValueError("Invalid trim start.")
         if trim_duration is not None and (not math.isfinite(trim_duration) or not 2 <= trim_duration <= 15):
             raise ValueError("Trim length must be 2–15 seconds.")
-        if kind != "video" and (trim_start or trim_duration is not None):
-            raise ValueError("Trimming is available for video references only.")
+        if kind == "image" and (trim_start or trim_duration is not None):
+            raise ValueError("Images cannot have an audio/video trim.")
     except (TypeError, ValueError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
     reader = await request.multipart()
@@ -378,7 +382,7 @@ async def upload_ref(request):
                     elif not 1.9 <= duration <= 15.1:
                         raise ValueError("H3 reference videos must be 2–15 seconds long. Select a 2–15 second trim.")
                     info.update(duration=round(duration, 2), fps=round(fps, 2), has_audio=bool(media.streams.audio),
-                                source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height,
+                                frame_count=stream.frames or sum(1 for _ in media.decode(stream)), source_duration=round(duration, 2), source_width=stream.width, source_height=stream.height,
                                 trim_adjusted=trim_adjusted)
                 else:
                     if not media.streams.audio:
@@ -387,9 +391,34 @@ async def upload_ref(request):
                     duration = float(stream.duration * stream.time_base) if stream.duration else float(media.duration or 0) / 1000000
                     if not duration and stream.codec_context.sample_rate:
                         duration = sum(frame.samples for frame in media.decode(stream)) / stream.codec_context.sample_rate
-                    if not 1.9 <= duration <= 15.1:
-                        raise ValueError("H3 reference audio must be 2–15 seconds long.")
+                    if trim_duration is not None:
+                        if trim_start + trim_duration > duration + .01:
+                            raise ValueError("Audio trim exceeds the source duration.")
+                    elif not 1.9 <= duration <= 15.1:
+                        raise ValueError("H3 reference audio must be 2–15 seconds long. Select a trim.")
                     info["duration"] = round(duration, 2)
+                    info["source_duration"] = round(duration, 2)
+        if kind == "audio" and (trim_duration is not None or trim_start):
+            if trim_duration is None:
+                raise ValueError("Choose the audio trim duration.")
+            normalized_name = f"{INPUT_PREFIX}_{uuid.uuid4().hex}.wav"
+            normalized_path = _safe_input_path(normalized_name)
+            from .h3_video_save import _ffmpeg_executable
+            process = await asyncio.create_subprocess_exec(
+                _ffmpeg_executable(), "-nostdin", "-v", "error", "-y", "-i", path,
+                "-ss", str(trim_start), "-t", str(trim_duration), "-vn", "-c:a", "pcm_s16le",
+                normalized_path, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            _, errors = await process.communicate()
+            if process.returncode:
+                raise ValueError("Audio trim failed: " + errors.decode("utf-8", "replace")[-300:])
+            with av.open(normalized_path) as checked:
+                actual = sum(frame.samples for frame in checked.decode(audio=0)) / checked.streams.audio[0].codec_context.sample_rate
+            if not 1.9 <= actual <= 15.1:
+                raise ValueError("Trimmed audio does not meet the 2–15 second limit.")
+            os.unlink(path)
+            path, name = normalized_path, normalized_name
+            normalized_path = None
+            info.update(duration=round(actual, 2), trim_start=trim_start, trim_duration=trim_duration, trimmed=True)
         if kind == "video" and (abs(info["fps"] - 24) > 0.02 or trim_duration is not None or trim_start or
                                 resize and (info["source_width"] > 1920 or info["source_height"] > 1080)):
             original_fps = info["fps"]
@@ -406,7 +435,7 @@ async def upload_ref(request):
                             if stream.duration else float(normalized.duration or 0) / 1000000)
                 if abs(fps - 24) > 0.02 or not 1.9 <= duration <= 15.1 or stream.width > 1920 or stream.height > 1080:
                     raise ValueError("The converted video did not meet H3's 24 fps and duration limits.")
-                info.update(duration=round(duration, 2), fps=round(fps, 2),
+                info.update(duration=round(duration, 2), fps=round(fps, 2),frame_count=stream.frames or sum(1 for _ in normalized.decode(stream)),
                             has_audio=bool(normalized.streams.audio),
                             normalized_from_fps=original_fps if abs(original_fps - 24) > .02 else None,
                             size=os.path.getsize(normalized_path),
@@ -476,6 +505,8 @@ def secure_wipe(path, passes=3):
 
 
 def _discard(filename):
+    if globals().get("_lab_assets") and (not _lab_assets.can_discard_input(filename) or _lab_jobs.is_file_leased(filename)):
+        return False
     path = _resolve(filename)
     if not path:
         return False
@@ -990,8 +1021,13 @@ def _wipe_orphans_at_startup():
 
 _lab_services = register_lab_routes(
     PromptServer.instance.app if hasattr(PromptServer, "instance") and hasattr(PromptServer.instance, "app") else None,
-    _video_dir(),
-    folder_paths_mod=folder_paths
+    folder_paths.get_output_directory(),
+    folder_paths_mod=folder_paths,
+    nodes_mod=nodes,
+    output_root=folder_paths.get_output_directory(),
+    input_root=folder_paths.get_input_directory(),
+    comfy_client=ComfyQueueBridge(lambda: getattr(PromptServer.instance, "port", None),
+                                 lambda: PromptServer.instance.routes)
 )
 _lab_assets = _lab_services["assets"]
 _lab_jobs = _lab_services["jobs"]

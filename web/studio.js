@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const state = {
-  mode: "text", prompts: {text:"",frames:"",refs:""}, width: 1280, height: 704, refs: [], first: null, last: null,
+  mode: "text", prompts: {text:"",frames:"",refs:""}, width: 1280, height: 704, refs: [], guides: [], first: null, last: null,
   running: null, started: 0, renderStarted: 0, samplingStart: 0, stepAt: 0, lastStep: 0,
   stepDurations: [], estimated: null, uploads: [], results: [], current: null, visibleResults: 8,
   gpu: "unknown", ramLimit: null, clientId: sessionStorage.getItem("h3studio.client.id.v1")||crypto.randomUUID(), socket: null, reconnect: 0,
@@ -116,6 +116,7 @@ const info = (message, bad=false) => {
   $("error").classList.toggle("error", bad);
 };
 function updateCapabilities(){
+  $("generate").disabled=state.busy||state.projectLoading||state.labCapabilities?.inference_enabled===false;
   if(!state.nodesReady||!state.modelsReady)return;
   document.querySelectorAll(".mode").forEach(button=>{
     const mode=button.dataset.mode;
@@ -168,9 +169,9 @@ const post = async (path, body) => {
   return r.json();
 };
 
-function selectMode(mode) {
-  if (state.busy) return;
-  if(document.querySelector('.mode[data-mode="'+mode+'"]')?.disabled)return;
+function selectMode(mode, internal=false) {
+  if (state.busy || state.projectLoading&&!internal) return;
+  if(!internal&&document.querySelector('.mode[data-mode="'+mode+'"]')?.disabled)return;
   state.prompts[state.mode]=$("prompt").value;
   state.mode = mode;
   const disabledLoras=state.loras.filter(item=>item.enabled&&!loraModeCompatible(item.name,mode));
@@ -277,9 +278,9 @@ function captureSettings(){
   const adapters=state.loras.filter(item=>item.enabled).map(item=>({name:item.name,strength:item.strength}));
   if(method()==="turbo")adapters.push({name:"H3 Turbo",strength:0.9});
   return {
-    mode:state.mode,model:refs?"MiniMax H3 Ref2VA":"MiniMax H3 FL2VA",
+    mode:state.mode,compiled_prompt:state.lastCompiledPrompt||null,model:refs?"MiniMax H3 Ref2VA":"MiniMax H3 FL2VA",
     canvas:state.width+"×"+state.height,quality:sizes.find(([w,h])=>w===state.width&&h===state.height)?.[2]||"Custom",
-    duration_seconds:seconds(),frames:Number($("duration").value),fps:24,
+    duration_seconds:(Number($("duration").value)-(state.continuation?.context_length||0))/24,frames:Number($("duration").value)-(state.continuation?.context_length||0),target_frames:Number($("duration").value),target_duration_seconds:seconds(),fps:24,
     steps:Number($("steps").value),seed:Number($("seed").value),render_method:method(),
     loras:adapters,reference_detail:refs?$("refSize").value:null,
     references:refs?state.refs.map(ref=>({name:"@"+ref.alias,type:ref.kind,use_as:ref.role,
@@ -418,6 +419,7 @@ async function loadLoras(){
     const names=(await r.json()).items||[];
     const existing=new Map(state.loras.map(item=>[item.name,item]));
     state.loras=names.map(name=>existing.get(name)||{name,enabled:false,strength:1});
+    if(state.desiredLoras){state.loras=state.loras.map(x=>({...x,enabled:!!state.desiredLoras.find(l=>l.name===x.name),strength:state.desiredLoras.find(l=>l.name===x.name)?.strength??x.strength}));}
     const managed=state.loras.find(item=>item.name===turboName);if(managed)managed.enabled=false;
     state.lorasLoaded=true;
     updateMethodAvailability();
@@ -538,7 +540,7 @@ function renderRefs() {
     const title=document.createElement("strong");title.textContent="@"+ref.alias;
     const remove=document.createElement("button");remove.className="button alt smallbtn";remove.textContent="Remove";remove.disabled=state.busy;
     remove.onclick=()=>{state.refs.splice(index,1);if(ref.previewUrl)URL.revokeObjectURL(ref.previewUrl);renderRefs();renderEstimates();saveDraft();};
-    head.append(icon,title,remove);
+    const up=document.createElement("button"),down=document.createElement("button");up.textContent="↑";down.textContent="↓";for(const button of [up,down]){button.className="button alt smallbtn";button.disabled=state.busy;}for(const [button,direction] of [[up,-1],[down,1]])button.onclick=()=>{const same=state.refs.map((r,i)=>r.kind===ref.kind?i:-1).filter(i=>i>=0),target=same[same.indexOf(index)+direction];if(target===undefined)return;[state.refs[index],state.refs[target]]=[state.refs[target],state.refs[index]];renderRefs();updatePreviewLive();};head.append(icon,title,up,down,remove);
     const meta=document.createElement("div");meta.className="refmeta";
     meta.textContent=({image:"Image",video:"Video",audio:"Audio"}[ref.kind])+" · "+ref.file.name
       +(ref.kind==="video"&&ref.localDuration?" · source "+ref.localDuration.toFixed(2)+"s":ref.kind==="audio"&&ref.localDuration?" · "+ref.localDuration.toFixed(2)+"s":"")
@@ -570,13 +572,20 @@ function renderRefs() {
     role.onchange=()=>{ref.role=role.value;saveDraft();renderRefs();updatePreviewLive();};
     roleWrap.append(roleLabel,role);fields.append(nameWrap,roleWrap);
     card.append(head,meta,fields);
-    if(ref.role==="custom"){
+    if(ref.kind==="image"){
+      const label=document.createElement("label"),fit=document.createElement("select");label.textContent="IMAGE FIT";for(const [value,title] of [["preserve","Preserve original proportions"],["crop","Crop to canvas"],["contain","Contain on canvas"]]){const o=document.createElement("option");o.value=value;o.textContent=title;fit.append(o);}fit.value=ref.imageFit||"preserve";fit.disabled=state.busy;fit.onchange=()=>{ref.imageFit=fit.value;updateRefFitPreview(ref).catch(e=>info(e.message,true));};card.append(label,fit);
+    }
+    if(ref.role==="custom"||ref.role==="storyboard"){
       const instWrap=document.createElement("div");instWrap.className="section";instWrap.style.marginTop="6px";instWrap.style.paddingTop="6px";
-      const instLabel=document.createElement("label");instLabel.textContent="CUSTOM INSTRUCTION (OPTIONAL)";instLabel.style.margin="4px 0 3px";
+      const instLabel=document.createElement("label");instLabel.textContent=ref.role==="storyboard"?"PANEL ORDER / SHOT MAP (OPTIONAL)":"CUSTOM INSTRUCTION (OPTIONAL)";instLabel.style.margin="4px 0 3px";
       const instInput=document.createElement("input");instInput.placeholder="e.g. use for lighting direction only; replace subject";
-      instInput.value=ref.instruction||"";instInput.disabled=state.busy;
-      instInput.oninput=()=>{ref.instruction=instInput.value.trim();saveDraft();updatePreviewLive();};
+      instInput.value=ref.role==="storyboard"?ref.panelOrder||"":ref.instruction||"";instInput.disabled=state.busy;
+      instInput.oninput=()=>{if(ref.role==="storyboard")ref.panelOrder=instInput.value.trim();else ref.instruction=instInput.value.trim();saveDraft();updatePreviewLive();};
       instWrap.append(instLabel,instInput);card.append(instWrap);
+    }
+    if(ref.kind==="audio"){
+      const label=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=!!ref.trimEnabled;toggle.disabled=state.busy;toggle.onchange=()=>{ref.trimEnabled=toggle.checked;renderRefs();};label.append(toggle,document.createTextNode(" Trim audio range"));card.append(label);
+      if(ref.trimEnabled)for(const [key,title,min,max] of [["trimStart","Audio start (s)",0,3600],["trimDuration","Use audio (s)",2,15]]){const label=document.createElement("label"),input=document.createElement("input");label.textContent=title;input.type="number";input.min=min;input.max=max;input.step=".01";input.value=ref[key]??(key==="trimStart"?0:15);input.disabled=state.busy;input.onchange=()=>{ref[key]=Number(input.value);updateRefDurationNotice();};card.append(label,input);}
     }
     const insert=document.createElement("button");insert.type="button";insert.className="button alt smallbtn ref-insert";insert.textContent="Insert @"+ref.alias+" into prompt";insert.title=insert.textContent;insert.disabled=state.busy;insert.onclick=()=>insertReferenceMention(ref.alias,true);card.append(insert);
     if(ref.kind==="video"){
@@ -646,10 +655,9 @@ function mentionItems(){
     return items;
   }
   if(state.mode!=="refs")return [];
-  let image=0,subject=0,video=0,audio=0;
-  return orderedRefs().map(ref=>({alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,
-    tag:ref.kind==="image"?ref.role==="storyboard"?"Picture "+(++image)+" · Storyboard":"Subject "+(++subject)+" · Picture "+(++image):ref.kind==="video"?"Video "+(++video):"Audio "+(++audio),
-    label:ref.kind==="image"?"Image":ref.kind==="video"?"Video":"Audio"}));
+  let bindings=[];
+  try{bindings=H3PromptCompiler.compilePrompt({mode:"refs",source_prompt:state.refs.map(r=>"@"+r.alias).join(" "),references:currentRenderSpec().references}).bindings||[];}catch{}
+  return orderedRefs().map(ref=>({alias:ref.alias,kind:ref.kind,previewUrl:ref.previewUrl,tag:(()=>{const b=bindings.find(b=>b.alias===ref.alias);return b?b.tag+(b.paired_audio_tag?" + "+b.paired_audio_tag:""):ref.kind;})(),label:ref.kind}));
 }
 function mentionPreview(item){
   if(!item.previewUrl||item.kind==="audio")return null;
@@ -716,6 +724,7 @@ function currentRenderSpec() {
     source_prompt: $("prompt").value.trim(),
     references: refs ? state.refs.map(r => ({
       asset_id: r.assetId || r.alias,
+      panel_order:r.panelOrder||"",
       alias: r.alias,
       kind: r.kind,
       role: r.role || (r.kind === "image" ? "character identity" : r.kind === "video" ? "motion" : "voice"),
@@ -723,7 +732,10 @@ function currentRenderSpec() {
       use_audio: !!r.useAudio,
       file: r.file?.name
     })) : [],
-    guides: state.guides || [],
+    guides: state.guides.map(g=>({...g,file:undefined,filename:g.file?.name,relative_to_new_content:!!state.continuation})),
+    capabilities: state.labCapabilities || {},
+    frames: { first: state.mode === "frames" && state.first ? {file:state.first.file?.name} : null,
+      last: state.mode === "frames" && state.last ? {file:state.last.file?.name} : null },
     first: state.mode === "frames" && state.first ? { file: state.first.file?.name } : null,
     last: state.mode === "frames" && state.last ? { file: state.last.file?.name } : null,
     canvas: { width: state.width, height: state.height },
@@ -732,6 +744,7 @@ function currentRenderSpec() {
     target_frames: Number($("duration").value),
     duration: Number($("duration").value),
     duration_seconds: seconds(),
+    target_seconds: seconds(),
     seed: Number($("seed").value),
     steps: Number($("steps").value),
     render_method: method(),
@@ -759,7 +772,7 @@ function updatePreviewLive() {
       (res.bindings || []).forEach(b => {
         const span = document.createElement("span");
         span.className = "prompt-asset used";
-        span.innerHTML = `<strong>@${b.alias}</strong> <span>→ ${b.tag}</span> <small>${b.kind}${b.role ? " · " + b.role : ""}</small>`;
+        span.textContent = `@${b.alias} → ${b.tag}${b.paired_audio_tag?" + "+b.paired_audio_tag:""} · ${b.kind}${b.role ? " · " + b.role : ""}`;
         tagsWrap.append(span);
       });
       if (res.warnings && res.warnings.length) {
@@ -823,8 +836,7 @@ function graph(prompt,uploads,token) {
     });
   }
 
-  const { graph: g } = H3GraphBuilder.buildGraph(spec, resolvedAssets);
-  return g;
+  return H3GraphBuilder.buildGraph(spec, resolvedAssets, state.labCapabilities || {});
 }
 
 function setProgress(label,pct=null,remaining=null,busy=false) {
@@ -850,10 +862,11 @@ function setBusy(value) {
   state.busy=value;
   $("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);
   document.querySelectorAll(".mode").forEach(b=>b.disabled=value);
-  for(const id of ["prompt","durationSeconds","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod","fitImages","fitFrames"])$(id).disabled=value;
+  for(const id of ["extendSourceMethod","guideKind","resultRole","mediaFormat","resultFrameIndex","promptMode","frameFit","projectSelect","refreshProjects","importProject","btnNewProject","btnSaveProject","btnExportProject","btnAssembleSequence","extendVideo","clearContinuation","addGuide","purgeContext","acceptTake","restoreTake","useResult","exportMedia","prompt","durationSeconds","steps","seed","refSize","refKind","addRef","refreshLoras","server","saveServer","randomSeed","clearFirst","clearLast","renderMethod","fitImages","fitFrames"])if($(id))$(id).disabled=value;
   document.querySelectorAll("#stepPresets button").forEach(button=>button.disabled=value);
   updateCapabilities();
-  renderLoras();renderRefs();renderEstimates();
+  renderLoras();renderRefs();renderGuides();renderEstimates();
+  refreshLabControls();
 }
 function uploadOne(file,kind,onProgress=()=>{},onSent=()=>{},options={}) {
   return new Promise((resolve,reject)=>{
@@ -862,7 +875,7 @@ function uploadOne(file,kind,onProgress=()=>{},onSent=()=>{},options={}) {
     const signal=state.abortController?.signal;
     const abort=()=>xhr.abort();
     const finish=()=>signal?.removeEventListener("abort",abort);
-    const query=new URLSearchParams({kind});if(options.resize)query.set("resize","1");if(kind==="video"&&options.trimEnabled){query.set("trim_start",String(options.trimStart||0));query.set("trim_duration",String(options.trimDuration));}
+    const query=new URLSearchParams({kind});if(options.resize)query.set("resize","1");if((kind==="video"||kind==="audio")&&options.trimEnabled){query.set("trim_start",String(options.trimStart||0));query.set("trim_duration",String(options.trimDuration));}
     xhr.open("POST",api("/h3_studio/upload_ref?"+query));
     xhr.responseType="json";
     xhr.upload.onprogress=event=>onProgress(Math.min(event.loaded,file.size),file.size);
@@ -889,6 +902,13 @@ async function cleanupUploads() {
   renderRefs();
 }
 async function cancelPromptId(id){
+  if(String(id).startsWith("request:")){
+    const result=await post(`/h3_studio/lab/jobs/by_request/${encodeURIComponent(state.runMeta.request_id)}/cancel`,{});
+    if(result.job_id){state.labJobId=result.job_id;state.runMeta.lab_job_id=result.job_id;saveSession();}
+    return result.state==="cancelled";
+  }
+  const jobId=state.labJobId||state.runMeta?.lab_job_id;
+  if(jobId){const result=await post(`/h3_studio/lab/jobs/${encodeURIComponent(jobId)}/cancel`,{});return result.state==="cancelled";}
   const r=await fetch(api("/queue"));
   if(!r.ok)throw Error("Queue unavailable");
   const queue=await r.json();
@@ -914,6 +934,7 @@ async function loadLibrary(force=false){
       const existing=known.get(file.filename);
       const entry=existing||{file,meta:{size:"H3 video"},kept:false};
       entry.file=file;
+      entry.takeId=file.filename.match(/^h3_studio_([a-f0-9]{12})_/)?.[1]||null;
       entry.kept=!!file.kept;
       entry.meta.duration=entry.meta.duration||file.duration||null;
       entry.meta.elapsed=entry.meta.elapsed||file.render_seconds||null;
@@ -923,7 +944,7 @@ async function loadLibrary(force=false){
     }
     state.serverSamples=items.filter(file=>Number.isFinite(file.render_seconds)&&Number.isFinite(file.units)&&file.units>0&&file.sample_key)
       .map(file=>({filename:file.filename,key:file.sample_key,units:file.units,seconds:file.render_seconds,at:Number(file.modified)*1000}));
-    state.results=next;
+    state.results=next;appendProjectResults(state.currentProject);
     if(state.current&&!next.includes(state.current)){
       state.current=null;
       $("resultCard").classList.add("hidden");
@@ -1051,6 +1072,7 @@ async function checkConnection() {
       const data=await stats.json(),ready=await readiness.json();
       state.modelsReady=ready.models||{};
       state.nodesReady=ready.nodes||null;
+      await refreshLabCapabilities();
       state.ramLimit=Number(ready.system_ram_limit_gb)||null;
       if(!state.nodesReady)throw Error("Update H3 Higgsfield to check the installed ComfyUI nodes.");
       if(!ready.quality?.h3_vae_tile_fix)throw Error("Update ComfyUI: the H3 VAE quality fix is missing.");
@@ -1072,11 +1094,12 @@ async function checkConnection() {
       const missingNodes=[...new Set([...baseNodes,...modeNodes])].filter(name=>!state.nodesReady[name]);
       $("connection").className=missing.length||missingNodes.length?"connection down":"connection ready";
       $("connectionText").textContent=missing.length?"Missing models: "+missing.join(", "):missingNodes.length?"Missing nodes: "+missingNodes.join(", "):"Connected · "+state.gpu.replace(/^.*?:/,"").slice(0,46);
+      if(state.labCapabilities?.inference_enabled===false){$("connectionText").textContent="V2 · Editing standby";$("status").textContent="V2 editing ready · Generation paused";}
       if(!missing.length&&!missingNodes.length&&!state.busy&&!state.running&&$("status").textContent==="Connect ComfyUI to begin")$("status").textContent="Ready to generate";
       updateCapabilities();
       renderEstimates();
       await Promise.allSettled([loadLibrary(),restoreSession(),loadHistorySamples()]);
-      return !missing.length&&!missingNodes.length;
+      return !missing.length&&!missingNodes.length&&state.labCapabilities?.inference_enabled!==false;
     }finally{clearTimeout(timeout);}
   }catch(e){
     $("connection").className="connection down";
@@ -1093,14 +1116,22 @@ $("saveServer").onclick=()=>{
   const v=$("server").value.trim().replace(/\/$/,"");
   if(v)localStorage.setItem(baseKey,v);else localStorage.removeItem(baseKey);
   state.libraryLoadedFor=null;state.sessionRecoveredFor=null;state.results=[];state.current=null;state.loras=[];state.lorasLoaded=false;state.modelsReady=null;state.nodesReady=null;
-  renderResults();connectSocket();checkConnection();
+  renderResults();initProjectController();connectSocket();checkConnection();
 };
 
 async function generate() {
   if(state.busy)return;
+  if(state.labCapabilities?.inference_enabled===false){info(state.labCapabilities.reason||"V2 generation is paused while production uses the shared GPU.",true);return;}
+  if(state.projectLoading){info("Wait for project inputs to finish restoring.",true);return;}
+  if(state.restoreMissing?.length){info("Reattach missing inputs and Save the project before rendering: "+state.restoreMissing.join(", "),true);return;}
   const epoch=++state.generationEpoch;
   let prompt,settings;
   try{
+    state.labJobId=null;
+    if(state.continuation){const c=state.continuation;
+      if(c.source_canvas&&(c.source_canvas.width!==state.width||c.source_canvas.height!==state.height))throw Error("Continuation must use the source canvas.");
+      if(c.type==="generated"&&c.source_model!==(state.mode==="refs"?modelRef:modelFL))throw Error("For another checkpoint, choose Video context and re-encode the source; direct latent switching has not been validated.");
+    }
     prompt=resolvedPrompt();
     const aspectLead=$("prompt").value.slice(0,300);
     const asksLandscape=/\b16\s*[:x/]\s*9\b/i.test(aspectLead),asksPortrait=/\b9\s*[:x/]\s*16\b/i.test(aspectLead);
@@ -1127,7 +1158,7 @@ async function generate() {
       if(state.mode!=="refs"&&/ref2v|r2v/i.test(item.name)&&!/fl2v|t2v/i.test(item.name))
         throw Error("LoRA "+item.name+" appears to target Ref2VA, not the FL2VA checkpoint.");
     }
-    if(state.mode==="frames"&&state.first){
+    if(state.mode==="frames"&&state.first&&!$("frameFit").value){
       const bitmap=await createImageBitmap(state.first.file);
       const ratio=bitmap.width/bitmap.height,target=state.width/state.height;
       bitmap.close();
@@ -1141,7 +1172,7 @@ async function generate() {
       if(lengths.length&&lengths.every(value=>Number.isFinite(value)&&value>0)&&lengths.reduce((sum,value)=>sum+value,0)>15.1)
         throw Error("Selected audio references and video soundtracks exceed 15 seconds combined. Shorten or deselect one before generating.");
     }
-    for(const ref of state.refs.filter(item=>item.kind==="video")){
+    for(const ref of state.refs.filter(item=>item.kind==="video"||item.kind==="audio")){
       const source=Number(ref.meta?.source_duration||ref.localDuration||0);
       if(ref.trimEnabled){
         const start=Number(ref.trimStart),length=Number(ref.trimDuration);
@@ -1153,7 +1184,7 @@ async function generate() {
     const selectedLoras=state.loras.filter(item=>item.enabled).map(item=>item.name);
     const selectedMethod=method();
     settings=captureSettings();
-    if(!await checkConnection())throw Error("Start ComfyUI or install the missing H3 models first.");
+    if(!await checkConnection())throw Error(state.labCapabilities?.inference_enabled===false?state.labCapabilities.reason:"Start ComfyUI or install the missing H3 models first.");
     if(method()!==selectedMethod)throw Error("The selected render method is unavailable on this server. Review the method and try again.");
     if(selectedLoras.length&&!state.lorasLoaded)throw Error("Could not verify installed LoRAs. Refresh the list before generating.");
     const missingLora=selectedLoras.find(name=>!state.loras.some(item=>item.name===name&&item.enabled));
@@ -1167,8 +1198,8 @@ async function generate() {
   focusWorkspace();
   $("resultCard").classList.add("hidden");
   try{
-    const uploads={first:null,last:null,refs:new Map()};
-    const totalFiles=state.mode==="frames"?Number(!!state.first)+Number(!!state.last):state.mode==="refs"?state.refs.length:0;
+    const uploads={first:null,last:null,refs:new Map(),guides:new Map()};
+    const totalFiles=(state.mode==="frames"?Number(!!state.first)+Number(!!state.last):state.mode==="refs"?state.refs.length:0)+state.guides.length;
     let fileIndex=0;
     const sendFile=async(file,kind,label,ref=null)=>{
       const index=++fileIndex;
@@ -1179,16 +1210,24 @@ async function generate() {
         if(ref&&ref.uploadProgress!==pct){ref.uploadProgress=pct;renderRefs();}
       };
       progress(0,file.size);
+      if(kind==="image"&&ref?.assetId){
+        const frame=state.mode==="frames"||label.startsWith("Keyframe");const fit=frame?(ref.imageFit||$("frameFit").value):ref.imageFit||"preserve";
+        const result=await projectCtrl.fetchJson(`/h3_studio/lab/assets/${encodeURIComponent(ref.assetId)}/resolve`,{method:"POST",body:JSON.stringify({fit,width:state.width,height:state.height})});
+        state.uploads.push(result.filename);saveSession();uploadMessage("Linked server image · "+label,100);ref.uploadProgress=undefined;ref.uploadReady=true;
+        return {...result,name:result.filename};
+      }
+      if(kind==="image" && (state.mode==="frames" || label.startsWith("Keyframe"))) file=await fitFrameImage(file,ref?.imageFit||null);
+      if(kind==="image" && ref?.imageFit && ref.imageFit!=="preserve")file=await fitFrameImage(file,ref.imageFit);
       const options={resize:kind==="image"?(state.mode==="frames"?$("fitFrames").checked:$("fitImages").checked):kind==="video"&&ref?.fitVideo!==false,
-        trimEnabled:kind==="video"&&!!ref?.trimEnabled,trimStart:ref?.trimStart||0,trimDuration:ref?.trimDuration};
+        trimEnabled:(kind==="video"||kind==="audio")&&!!ref?.trimEnabled,trimStart:ref?.trimStart||0,trimDuration:ref?.trimDuration};
       const result=await uploadOne(file,kind,progress,()=>uploadMessage("Checking "+label+" on the server · converting to 24 fps if needed",100),options);
       uploadMessage("Uploaded "+index+" of "+totalFiles+" · "+label+" · "+fmtBytes(file.size)+" · checked on server",100);
       if(ref){ref.uploadProgress=undefined;ref.uploadReady=true;renderRefs();}
       return result;
     };
     if(state.mode==="frames"){
-      if(state.first)uploads.first=(await sendFile(state.first.file,"image","Start frame")).name;
-      if(state.last)uploads.last=(await sendFile(state.last.file,"image","End frame")).name;
+      if(state.first)uploads.first=(await sendFile(state.first.file,"image","Start frame",state.first)).name;
+      if(state.last)uploads.last=(await sendFile(state.last.file,"image","End frame",state.last)).name;
     }else if(state.mode==="refs"){
       for(const ref of orderedRefs()){
         const result=await sendFile(ref.file,ref.kind,"@"+ref.alias,ref);
@@ -1206,26 +1245,55 @@ async function generate() {
       if(audioDuration>15.1)throw Error("Combined audio references, including selected video soundtracks, exceed 15 seconds.");
       renderRefs();
     }
+    for(const guide of state.guides){
+      if(!state.labCapabilities?.add_guide)throw Error("This server has no native H3 AddGuide.");
+      const kind=guide.kind||"image";const uploaded=await sendFile(guide.file,kind,"Keyframe at "+guide.frame_idx+"f",guide);
+      guide.fps=uploaded.fps;guide.frame_count=uploaded.frame_count;guide.duration_frames=uploaded.frame_count;
+      if(kind==="audio"&&guide.frame_idx+Math.ceil(uploaded.duration*24)>Number($("duration").value)-(state.continuation?.context_length||0))throw Error("Timed audio exceeds the remaining content. Trim the source or move it earlier.");
+      if(kind==="video"&&guide.use_audio&&!uploaded.has_audio)throw Error("The timed AV guide has no soundtrack.");
+      uploads.guides.set(guide,uploaded.name);
+    }
     if(epoch!==state.generationEpoch)throw Error("Cancelled");
+    if(state.continuation?.type==="imported"){
+      if(!state.continuation.source_asset_id)throw Error("Continuation source asset is missing.");
+      state.continuation.source_file=await projectCtrl.resolveAsset(state.continuation.source_asset_id);state.uploads.push(state.continuation.source_file);
+    }
     const token=crypto.randomUUID().replace(/-/g,"").slice(0,12);
     const workflow=graph(prompt,uploads,token);
     const units=workUnits(),sample_key=sampleKey();
     await post("/h3_studio/register_job",{token,settings,units,sample_key});
-    const r=await fetch(api("/prompt"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:workflow,client_id:state.clientId})});
-    const body=await r.json();
-    if(!r.ok||!body.prompt_id)throw Error(JSON.stringify(body.node_errors||body.error||body).slice(0,600));
+    const draft=await persistProjectDraft();
+    const submittedMeta={units:workUnits(),key:sampleKey(),mode:state.mode,size:sizeKey(),duration:settings.duration_seconds,prompt:$("prompt").value,settings,project_id:state.currentProject?.project_id,continuation:state.continuation?{...state.continuation}:null,draft};
+    if(epoch!==state.generationEpoch)throw Error("Cancelled");
+    state.runMeta=submittedMeta;
+    const submission={request_id:token,render_spec:{...currentRenderSpec(),workflow,client_id:state.clientId},asset_leases:[...state.uploads],project_id:submittedMeta.project_id,take_id:token};
+    state.runMeta.request_id=token;state.runMeta.submission=submission;state.running="request:"+token;saveSession();
+    const r=await fetch(api("/h3_studio/lab/jobs"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(submission)});
+    const response=await r.json();
+    state.labJobId=response.job?.job_id||response.job_id||null;
+    if(state.labJobId)state.runMeta.lab_job_id=state.labJobId;
+    const body={...response,prompt_id:response.job?.prompt_id};
+    if(response.job?.state==="cancelled"){state.running=null;state.labJobId=null;saveSession();throw new DOMException("Cancelled","AbortError");}
+    if(!r.ok||!body.prompt_id){
+      if(!r.ok&&r.status<500){state.running=null;state.labJobId=null;saveSession();}
+      if(state.labJobId&&r.status>=500){state.running="lab:"+state.labJobId;saveSession();}
+      throw Error(response.error||"The queue did not confirm submission. Its saved job will be reconciled before retrying.");
+    }
+    state.running=body.prompt_id;saveSession();
     if(epoch!==state.generationEpoch){
       let confirmed=false;
       try{confirmed=await cancelPromptId(body.prompt_id);}catch{}
       if(!confirmed){
-        state.runMeta={units:workUnits(),key:sampleKey(),mode:state.mode,size:sizeKey(),duration:seconds(),prompt:$("prompt").value,settings};
+        state.runMeta=submittedMeta;
         state.running=body.prompt_id;saveSession();
         throw Error("Cancellation could not be confirmed. The job is still being tracked; retry Cancel after checking the queue.");
       }
+      state.running=null;state.labJobId=null;saveSession();
       throw Error("Cancelled");
     }
-    state.runMeta={units:workUnits(),key:sampleKey(),mode:state.mode,size:sizeKey(),duration:seconds(),prompt:$("prompt").value,settings};
+    state.runMeta=submittedMeta;
     state.running=body.prompt_id;
+    saveSession();
     uploadMessage("");
     saveSession();
     setProgress("Queued or loading H3",4,(state.estimated.low+state.estimated.high)/2,true);
@@ -1255,7 +1323,7 @@ $("cancel").onclick=async()=>{
       }
     }catch(e){state.running=id;info("Could not confirm cancellation on the server. Check the queue before restarting.",true);setBusy(true);saveSession();return;}
   }
-  await cleanupUploads();setBusy(false);setProgress("Cancelled",0,null);showStageMessage("Render cancelled","Your inputs are ready for another attempt.");saveSession();pollQueue();
+  await cleanupUploads();setBusy(false);info("");uploadMessage("");setProgress("Cancelled",0,null);showStageMessage("Render cancelled","Your inputs are ready for another attempt.");saveSession();pollQueue();
 };
 
 function videoURL(file) {
@@ -1363,8 +1431,13 @@ function showVideo(entry){
   $("download").textContent="Download";
   $("keep").textContent=entry.kept?"Pinned":"Pin video";
   $("keep").disabled=entry.kept;
+  const imported=entry.file.subfolder&&entry.file.subfolder!=="video";$("keep").hidden=!!imported;$("discard").hidden=!!imported;
 }
 async function complete(file){
+  if(state.completing)return;state.completing=true;
+  try{await completeImpl(file);}finally{state.completing=false;}
+}
+async function completeImpl(file){
   if(!state.running||!isStudioOutputName(file?.filename))return;
   try{
     const response=await fetch(api("/h3_studio/library"),{cache:"no-store"});
@@ -1383,6 +1456,7 @@ async function complete(file){
   if(!state.running)return;
   state.outputMissingSince=null;
   state.running=null;
+  state.labJobId=null;
   const completedEpoch=state.generationEpoch;
   const actual=(Date.now()-state.started)/1000;
   const renderActual=(Date.now()-(state.renderStarted||state.started))/1000;
@@ -1396,22 +1470,18 @@ async function complete(file){
   await post("/h3_studio/track",{filename:file.filename,render_seconds:renderActual,
     units:meta.units,sample_key:meta.key,settings:meta.settings}).catch(()=>{});
   state.results.unshift(entry);
-  if(typeof projectCtrl!=="undefined"&&projectCtrl&&projectCtrl.currentProject){
-    const proj=projectCtrl.currentProject;
-    const newTake={
-      take_id:takeId,
-      clip_id:state.currentClipId||("clip_"+takeId.slice(0,8)),
-      output_file:"video/"+file.filename,
-      effective_settings:meta.settings||{},
-      created_at:Date.now()/1000,
-      status:"completed"
-    };
-    const updatedTakes=[...(proj.takes||[]),newTake];
-    const updatedAccepted=[...(proj.accepted_take_ids||[]),takeId];
-    projectCtrl.saveCurrentProject({
-      takes:updatedTakes,
-      accepted_take_ids:updatedAccepted
-    }).then(updateProjectUI).catch(()=>{});
+  if(projectCtrl && meta.project_id){
+    try {
+      const proj=await projectCtrl.fetchJson(`/h3_studio/lab/projects/${encodeURIComponent(meta.project_id)}`);
+      const take={take_id:takeId,clip_id:state.currentClipId||("clip_"+takeId.slice(0,8)),
+        output_file:"video/"+file.filename,effective_settings:meta.settings||{},draft:meta.draft,
+        parent_take_id:meta.continuation?.source_take_id||null,overlap_frames:0,
+        unique_frames:meta.settings?.frames||124,
+        context_token:takeId,created_at:Date.now()/1000,status:"completed"};
+      const saved=await projectCtrl.fetchJson(`/h3_studio/lab/projects/${encodeURIComponent(meta.project_id)}`,{
+        method:"POST",body:JSON.stringify({project:{...proj,takes:[...(proj.takes||[]).filter(t=>t.take_id!==takeId),take]},expected_revision:proj.revision})});
+      if(projectCtrl.currentProject?.project_id===meta.project_id){projectCtrl.currentProject=saved;updateProjectUI(saved);}
+    }catch(e){info("Video saved; attaching its take to the project failed: "+e.message,true);}
   }
   const cleanup=cleanupUploads();
   setBusy(false);showVideo(entry);renderResults();
@@ -1441,22 +1511,29 @@ $("download").onclick=()=>{
   const entry=state.current;if(!entry)return;
   const a=document.createElement("a");a.href=videoURL(entry.file);a.download=entry.file.filename;document.body.append(a);a.click();a.remove();
 };
-if($("extendVideo")) $("extendVideo").onclick=()=>{
-  const entry=state.current;if(!entry)return;
-  const filename=entry.file.filename;
-  state.continuation={
-    source_take_id:entry.takeId||filename.slice(0,12),
-    source_output:filename,
-    context_frames:39,
-    audio_feather_ticks:8,
-  };
-  $("durationSeconds").value="7.3";
-  syncDuration();
-  info(`Extend Mode active for ${filename}. Next render will extend this clip from preserved AV context (+5.67s net new content).`);
-  $("prompt").value="";
-  $("prompt").placeholder="Describe the continuation movement and sound…";
-  $("prompt").focus();
-  updatePreviewLive();
+if($("extendVideo")) $("extendVideo").onclick=async()=>{
+  const entry=state.current;if(!entry||state.busy)return;
+  try{
+    await refreshLabCapabilities();
+    if(!state.labCapabilities?.continuation_ready)throw Error("Install the pinned continuation engine on the isolated server first. See Lab readiness.");
+    const token=entry.takeId||entry.file.filename.match(/h3_studio_([a-f0-9]{12})/)?.[1];
+    if(!token)throw Error("This older clip has no saved sampler context.");
+    if($("extendSourceMethod").value==="imported"){
+      const imported=await post("/h3_studio/lab/media/import_video",{filename:entry.file.filename,output_file:resultOutputPath(entry),project_id:state.activeProjectId});
+      if(imported.metadata.width!==state.width||imported.metadata.height!==state.height)throw Error("Use the source video's canvas before extending it.");
+      state.currentClipId="clip_"+crypto.randomUUID();
+      state.continuation={type:"imported",source_take_id:entry.takeId,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},context_length:39,audio_feather_ticks:8};
+      $("durationSeconds").value="7.3";syncDuration();renderContinuation();$("prompt").value="";$("prompt").focus();updatePreviewLive();return;
+    }
+    const context=await projectCtrl.fetchJson(`/h3_studio/lab/contexts/${encodeURIComponent(token)}`);
+    const expected=state.mode==="refs"?modelRef:modelFL;
+    if(context.model_id!==expected||context.width!==state.width||context.height!==state.height)throw Error("Use the source checkpoint and canvas before extending this clip. Switching checkpoints has not been validated.");
+    state.currentClipId="clip_"+crypto.randomUUID();
+    state.continuation={type:"generated",source_take_id:entry.takeId,source_token:token,source_model:context.model_id,source_canvas:{width:context.width,height:context.height},context_length:39,audio_feather_ticks:8};
+    $("durationSeconds").value="7.3";syncDuration();renderContinuation();
+    $("prompt").value="";$("prompt").placeholder="Describe continuation motion and sound…";$("prompt").focus();
+    updatePreviewLive();
+  }catch(e){info(e.message,true);}
 };
 $("discard").onclick=async()=>{
   const entry=state.current;if(!entry)return;
@@ -1566,7 +1643,30 @@ function connectSocket(){
   }catch{setTimeout(connectSocket,5000);}
 }
 async function pollHistory(){
+  if(state.pollingHistory)return;state.pollingHistory=true;
+  try{await pollHistoryImpl();}finally{state.pollingHistory=false;}
+}
+async function pollHistoryImpl(){
   if(!state.running)return;
+  if(String(state.running).startsWith("request:")&&state.runMeta?.submission){
+    try{
+      const lookup=await fetch(api(`/h3_studio/lab/jobs/by_request/${encodeURIComponent(state.runMeta.request_id)}`));
+      let record;
+      if(lookup.status===404){
+        const retry=await fetch(api("/h3_studio/lab/jobs"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.runMeta.submission)});
+        const response=await retry.json();record=response.job;
+        if(!retry.ok&&retry.status<500){state.running=null;await cleanupUploads();setBusy(false);info(response.error||"Submission rejected",true);saveSession();return;}
+      }else if(lookup.ok)record=await lookup.json();
+      if(record?.job_id){state.labJobId=record.job_id;state.runMeta.lab_job_id=record.job_id;state.running=record.prompt_id||"lab:"+record.job_id;saveSession();}
+    }catch{}
+  }
+  const jobId=state.labJobId||state.runMeta?.lab_job_id;
+  if(jobId){try{const job=await projectCtrl.fetchJson(`/h3_studio/lab/jobs/${encodeURIComponent(jobId)}`);
+    if(job.prompt_id){state.running=job.prompt_id;saveSession();}
+    if(job.state==="completed"&&job.output){await complete(job.output);return;}
+    if(job.state==="cancelled"||job.state==="failed"){state.running=null;await cleanupUploads();setBusy(false);setProgress(job.state,0,null);info(job.error?JSON.stringify(job.error).slice(0,400):"Job "+job.state,job.state==="failed");saveSession();return;}
+  }catch{} }
+  if(!state.running||/^(lab|request):/.test(String(state.running)))return;
   try{
     const r=await fetch(api("/history/"+state.running));if(!r.ok)return;
     const data=(await r.json())[state.running];if(!data)return;
@@ -1588,6 +1688,7 @@ async function pollQueue(){
     if(state.serverMissingSince){state.serverMissingSince=null;if(state.running)setProgress("Connected · checking render progress",null,null,true);}
     const data=await r.json(),running=data.queue_running||[],pending=data.queue_pending||[];
     const id=state.running;
+    if(/^(lab|request):/.test(String(id))){$("queueInfo").textContent="Queue: reconciling saved submission · inputs retained";await pollHistory();return;}
     const runningItem=running.find(item=>item[1]===id);
     const runningHere=!!runningItem;
     const position=pending.findIndex(item=>item[1]===id);
@@ -1661,33 +1762,22 @@ addEventListener("pagehide",event=>{
   if(!state.running)state.uploads.forEach(filename=>navigator.sendBeacon(api("/h3_studio/discard"),new Blob([JSON.stringify({filename})],{type:"application/json"})));
 });
 let projectCtrl = null;
-function initProjectController() {
-  const apiBase = localStorage.getItem(baseKey) || "";
-  projectCtrl = new H3ProjectController({
-    apiBase,
-    serverKey: apiBase || location.origin,
-    onProjectChanged: updateProjectUI,
-  });
-
-  const activePid = localStorage.getItem(projectCtrl._storageKey("active_project_id"));
-  if (activePid) {
-    projectCtrl.loadProject(activePid).catch(() => {
-      projectCtrl.createProject("Default Project", { width: state.width, height: state.height }).catch(() => {});
-    });
-  } else {
-    projectCtrl.createProject("Default Project", { width: state.width, height: state.height }).catch(() => {});
-  }
-
-  const handoffJson = sessionStorage.getItem("h3_lab.imported_handoff");
-  if (handoffJson) {
-    try {
-      const handoff = JSON.parse(handoffJson);
-      sessionStorage.removeItem("h3_lab.imported_handoff");
-      if (handoff && handoff.asset) {
-        applyQwenHandoff(handoff.asset, handoff.as_role);
-      }
-    } catch {}
-  }
+async function initProjectController() {
+  state.projectLoading=true;++state.hydrationEpoch;
+  const apiBase=localStorage.getItem(baseKey)||"";
+  let controller;controller=new H3ProjectController.ProjectController({apiBase,serverKey:apiBase||location.origin,onProjectChanged:p=>{if(controller===projectCtrl)updateProjectUI(p);}});
+  projectCtrl=controller;
+  try{
+    const pid=localStorage.getItem(controller._storageKey("active_project_id"));
+    let project;
+    if(pid){try{project=await controller.loadProject(pid);}catch(e){if(e.status!==404)throw e;project=await controller.createProject("Default Project",{width:state.width,height:state.height});}}
+    else project=await controller.createProject("Default Project",{width:state.width,height:state.height});
+    if(controller!==projectCtrl)return;
+    await hydrateProjectDraft(project.draft||{mode:"text",prompts:{text:$("prompt").value,frames:"",refs:""},refs:[],guides:[]});
+    const json=sessionStorage.getItem("h3_lab.imported_handoff");
+    if(json){const handoff=JSON.parse(json);if(handoff?.asset){await applyQwenHandoff(handoff.asset,handoff.as_role);sessionStorage.removeItem("h3_lab.imported_handoff");}}
+  }catch(e){info("Project setup unavailable: "+e.message,true);}
+  finally{if(controller===projectCtrl){state.projectLoading=false;refreshLabControls();}}
 }
 
 function updateProjectUI(proj) {
@@ -1696,44 +1786,22 @@ function updateProjectUI(proj) {
   state.activeProjectId = proj.project_id;
   if ($("projectNameDisplay")) $("projectNameDisplay").textContent = `${proj.name || 'Project'} (${proj.project_id.slice(0, 8)})`;
   if ($("projectRevision")) $("projectRevision").textContent = `Rev ${proj.revision || 1}`;
-  renderSequenceCard();
+  appendProjectResults(proj);renderResults();renderSequenceCard();
+  refreshProjectList().catch(e=>info("Project list unavailable: "+e.message,true));
 }
 
-function applyQwenHandoff(asset, asRole) {
-  if (asRole === "start_frame") {
-    selectMode("frames");
-    const fakeFile = { name: asset.original_name || asset.path.split(/[\\/]/).pop(), size: 1024*1024 };
-    state.first = { file: fakeFile, url: api("/view?filename=" + encodeURIComponent(asset.path)) };
-    const box = $("firstBox");
-    if (box) {
-      box.replaceChildren();
-      const img = document.createElement("img");
-      img.src = state.first.url;
-      img.alt = "Start frame";
-      box.append(img);
+async function applyQwenHandoff(asset, asRole) {
+  try{
+    const blob=await projectCtrl.mediaBlob(asset.asset_id);
+    const file=new File([blob],asset.original_name||"qwen.png",{type:blob.type||"image/png"});
+    const item={assetId:asset.asset_id,file,url:URL.createObjectURL(blob)};
+    if(asRole==="start_frame"||asRole==="end_frame"){
+      const which=asRole==="start_frame"?"first":"last";selectMode("frames",true);state[which]=item;renderFrameItem(which);
+    }else{
+      selectMode("refs",true);state.refs.push({...item,previewUrl:item.url,alias:aliasName(asset.alias||file.name),kind:"image",role:"custom",instruction:""});renderRefs();
     }
-    $("clearFirst").classList.remove("hidden");
-    info("Imported Qwen image as start frame.");
-  } else {
-    selectMode("refs");
-    const alias = asset.alias || aliasName(asset.original_name || "qwen_ref");
-    const ref = {
-      alias,
-      kind: "image",
-      role: "custom",
-      instruction: "Use visual elements from this Qwen image",
-      assetId: asset.asset_id,
-      file: { name: asset.original_name || asset.path.split(/[\\/]/).pop(), size: 1024*1024 },
-      previewUrl: api("/view?filename=" + encodeURIComponent(asset.path)),
-      uploadReady: true,
-      meta: { name: asset.path }
-    };
-    state.refs.push(ref);
-    renderRefs();
-    info(`Imported Qwen image as reference @${alias}.`);
-  }
-  updatePreviewLive();
-  saveDraft();
+    info("Qwen image linked to H3. Save the project to retain this setup.");updatePreviewLive();saveDraft();
+  }catch(e){info("Cannot restore Qwen image: "+e.message,true);throw e;}
 }
 
 function renderSequenceCard() {
@@ -1763,9 +1831,10 @@ function renderSequenceCard() {
     chip.style.gap = "8px";
 
     const frames = take.effective_settings?.frames || 124;
-    totalFrames += (idx === 0 ? frames : Math.max(0, frames - (take.effective_settings?.context_frames || 39)));
+    totalFrames += take.unique_frames ?? Math.max(0,frames-(take.overlap_frames||0));
 
-    chip.innerHTML = `<strong>Clip ${idx + 1}</strong> <span>Take ${take.take_id.slice(0, 6)}</span> <small>${frames}f</small>`;
+    chip.textContent = `Clip ${idx+1} · Take ${String(take.take_id).slice(0,6)} · ${take.unique_frames??frames}f`;
+    const remove=document.createElement("button");remove.textContent="Remove";remove.className="button alt smallbtn";remove.disabled=state.busy;remove.onclick=()=>projectCtrl.saveCurrentProject({accepted_take_ids:acceptedTakeIds.filter(id=>id!==take.take_id)}).catch(e=>info(e.message,true));chip.append(remove);
     strip.append(chip);
   });
 
@@ -1778,7 +1847,8 @@ if ($("btnNewProject")) {
     const name = prompt("Project name:", "New H3 Project");
     if (!name) return;
     try {
-      await projectCtrl.createProject(name, { width: state.width, height: state.height });
+      await withProjectLoading(async()=>{await projectCtrl.createProject(name, { width: state.width, height: state.height });
+      state.currentClipId=null;await hydrateProjectDraft({mode:"text",refs:[],guides:[],prompts:{text:"",frames:"",refs:""}});});
       info(`Created project "${name}".`);
     } catch (e) {
       info("Failed to create project: " + e.message, true);
@@ -1795,12 +1865,11 @@ if ($("btnSaveProject")) {
       const updates = {
         canvas: { width: state.width, height: state.height },
         fps: 24,
+        draft:await persistProjectDraft(),
+        assets:[...new Map([...(projectCtrl.currentProject.assets||[]),...allInputItems().filter(x=>x.assetId).map(x=>({asset_id:x.assetId,alias:x.alias,role:x.role}))].map(x=>[x.asset_id,x])).values()],
       };
-      if (currentTakeId && !projectCtrl.currentProject.accepted_take_ids?.includes(currentTakeId)) {
-        updates.accepted_take_ids = [...(projectCtrl.currentProject.accepted_take_ids || []), currentTakeId];
-      }
       await projectCtrl.saveCurrentProject(updates);
-      info("Project saved successfully.");
+      state.restoreMissing=[];info("Project saved successfully.");
     } catch (e) {
       info("Failed to save project: " + e.message, true);
     }
@@ -1840,6 +1909,7 @@ if ($("btnAssembleSequence")) {
 
 $("prompt").addEventListener("input", updatePreviewLive);
 
+initLabUI();
 const missingInputs=restoreDraft();
 selectMode(state.mode);renderEstimates();
 updatePreviewLive();

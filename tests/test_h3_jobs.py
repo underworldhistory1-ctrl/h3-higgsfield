@@ -153,6 +153,28 @@ class TestH3JobService(unittest.TestCase):
         reconciled = asyncio.run(self.job_service.reconcile_submission_gap(job["job_id"], self.mock_comfy))
         self.assertNotEqual(reconciled["state"], "completed")
 
+    def test_terminal_outcomes_survive_late_queue_acknowledgements(self):
+        from unittest.mock import patch
+        for terminal in ("cancelled", "completed", "failed"):
+            with self.subTest(terminal=terminal):
+                job, _ = self.job_service.submit_job("terminal_" + terminal, {}, ["leased_" + terminal])
+                owner = job["job_id"]
+                with patch.object(self.asset_service, "release_all_leases_for_owner",
+                                  wraps=self.asset_service.release_all_leases_for_owner) as release:
+                    record = self.job_service.update_job(owner, state=terminal,
+                        output={"filename": "complete.mp4"} if terminal == "completed" else None)
+                    for late_state in ("queued", "unknown", "cancel_requested", "cancelled"):
+                        updated = self.job_service.update_job(owner, state=late_state, prompt_id="late_" + terminal,
+                            error="late network failure", progress={"phase": "queued"})
+                        self.assertEqual(updated["state"], terminal)
+                        self.assertEqual(updated["output"], record["output"])
+                        self.assertEqual(updated["error"], record["error"])
+                        self.assertEqual(updated["prompt_id"], "late_" + terminal)
+                    self.assertEqual(release.call_count, 1)
+                if terminal == "completed":
+                    cancelled = asyncio.run(self.job_service.request_cancel(owner, self.mock_comfy))
+                    self.assertEqual(cancelled["state"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()

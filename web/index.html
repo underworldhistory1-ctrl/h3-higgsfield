@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>H3 Higgsfield — Create Video</title>
+<title>H3 Higgsfield V2 — Create Video</title>
 <style>
 .file-picker{position:absolute;width:1px;height:1px;opacity:0;clip-path:inset(50%);pointer-events:none}
 :root{color-scheme:dark;--bg:#101010;--surface:#181818;--surface2:#222;--line:#343434;--line2:#4b4b4b;--text:#f7f7f7;--muted:#a9a9a9;--quiet:#747474;--acid:#d6ff20;--bad:#ff817b;font-family:Inter,"Segoe UI",Arial,sans-serif}
@@ -43,7 +43,7 @@
 </head>
 <body>
 <header class="top">
- <div class="brand"><div class="mark">H3</div><div class="brand-name">H3 Higgsfield</div></div>
+ <div class="brand"><div class="mark">H3</div><div class="brand-name">H3 Higgsfield · V2</div></div>
  <nav class="topnav" aria-label="Studio workspace"><a class="active" href="index.html">Create Video</a><a href="image.html">Create Image</a></nav>
  <div class="connection" id="connection"><i class="dot"></i><span id="connectionText">Checking ComfyUI</span><button id="retry" class="button alt smallbtn">Retry</button></div>
 </header>
@@ -62,7 +62,9 @@
      <button id="btnSaveProject" class="button alt smallbtn" type="button">Save</button>
      <button id="btnExportProject" class="button alt smallbtn" type="button">Export</button>
     </div>
+    <div class="tip" id="contextStorage"></div><button id="refreshContextStorage" class="button alt smallbtn">Context storage</button>
     <div id="projectNameDisplay" class="tip" style="margin-top:6px;font-weight:600">Default Project</div>
+    <label for="projectSelect">OPEN SAVED PROJECT</label><div class="row"><select id="projectSelect"><option value="">Choose project…</option></select><button id="refreshProjects" class="button alt smallbtn">Refresh</button><button id="importProject" class="button alt smallbtn">Import ZIP</button></div><input id="projectBundleFile" type="file" accept=".zip" hidden>
    </section>
    <div class="modes" role="tablist" aria-label="Generation mode">
     <button type="button" class="mode active" data-mode="text" role="tab" aria-selected="true"><strong>Text</strong><span>Prompt only</span></button>
@@ -76,6 +78,7 @@
      <div><label for="lastFile">END FRAME</label><div class="uploadbox" id="lastBox" role="button" tabindex="0">+ Add end frame</div><input type="file" id="lastFile" accept="image/png,image/jpeg,image/webp" hidden><button class="button alt smallbtn hidden" id="clearLast">Remove</button></div>
     </div><div class="tip" id="frameHint">Add at least one frame to generate in this mode.</div>
     <label style="display:flex;gap:8px;align-items:center"><input id="fitFrames" type="checkbox" checked style="width:auto"> Auto fit oversized start/end images · 2048 px maximum</label>
+    <label for="frameFit">FRAME FIT</label><select id="frameFit"><option value="crop">Crop to canvas · preserve proportions</option><option value="contain">Contain · black borders</option></select><div class="tip">Original files stay in the project; fitting creates a separate render input.</div>
    </section>
    <section class="panel" id="refsSection" hidden>
     <h2>Reference library</h2><p>Name each asset, then type @name in the prompt. Each asset is bound to its H3 reference input.</p>
@@ -83,15 +86,18 @@
     <input type="file" id="refFile" class="file-picker" aria-label="Choose reference file"><div id="refs" class="refs"></div><div id="refDurationNotice" class="tip" aria-live="polite"></div>
     <label style="display:flex;gap:8px;align-items:center"><input id="fitImages" type="checkbox" checked style="width:auto"> Auto fit oversized reference images · 2048 px maximum</label>
     <div class="tip">Video references guide a new generation. “Whole scene” asks H3 to follow the full clip while changing the detail in your prompt, but cannot preserve every other frame or pixel. For a multi-panel shot sheet, select Storyboard and mention it in the prompt. Up to 9 images, 3 videos, 3 audio references and 12 files total. A selected video soundtrack counts as audio. Each video/audio: 2–15 s; each type totals 15 s. Trim longer clips below; oversized video can fit within 1920×1080. Frame rates convert to 24 fps after upload.</div>
-    <div class="section"><label for="refSize">REFERENCE IMAGE DETAIL</label><select id="refSize"><option value="max" selected>Max reference detail · up to 2048 px</option><option value="match">Match output canvas · faster</option></select><div class="tip">Max affects reference identity detail, not output resolution, and can be much slower.</div></div>
+    <div class="section"><label for="refSize">REFERENCE IMAGE DETAIL</label><select id="refSize"><option value="max" selected>Max · native short edge 2048 px</option><option value="match">Match output canvas · faster</option></select><div class="tip">Upload fitting caps the long edge at 2048 px. Native Max caps the short edge at 2048 px, never upscales, and avoids the extra downscale used by Match. It can consume more memory; it cannot recover lost source detail.</div></div>
    </section>
    <section class="panel">
     <h2>Prompt</h2><p>Describe what should happen and what should be heard. No rewrite step.</p>
+    <label for="promptMode">PROMPT FORMAT</label><select id="promptMode"><option value="guided">Guided prompt</option><option value="structured">Native structured prompt</option></select>
     <div><div style="position:relative"><textarea id="prompt" placeholder="A quiet train station at dawn. A woman checks the empty platform. The first train approaches; distant announcement and wheels on the tracks."></textarea><div id="mentionMenu" class="mention-menu hidden"></div></div><div id="promptAssets" class="prompt-assets" aria-live="polite"></div></div>
     <div class="tip" id="promptTip">Write the scene directly. In References mode, type @ to mention a named asset.</div>
     <details class="prompt-preview" id="promptPreviewBox" style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Compiled prompt preview &amp; tags</summary><div id="compiledPromptDisplay" class="detail-prompt" style="margin-top:8px;font-size:11px">No prompt compiled yet.</div><div id="tagBindingsDisplay" class="prompt-assets" style="margin-top:6px"></div></details>
     <div id="error" class="notice error hidden" role="alert"></div>
    </section>
+   <section class="panel" id="guidesPanel"><h2>Temporal keyframes</h2><p>Image guides at chosen times. Available when the server has native H3 AddGuide.</p><label for="guideKind">GUIDE TYPE</label><select id="guideKind"><option value="image">Image keyframe</option><option value="audio" disabled>Timed audio · advanced</option><option value="video" disabled>Video / AV clip · advanced</option></select><button id="addGuide" class="button alt smallbtn" disabled>Add guide</button><input id="guideFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><div id="guideList" class="refs"></div><div id="guideStatus" class="tip">Connect the server to check availability.</div></section>
+   <section class="panel hidden" id="continuationPanel"><h2>Extend</h2><div id="continuationStatus" class="tip"></div><button id="clearContinuation" class="button alt smallbtn">Clear continuation</button></section>
    <section class="panel">
     <h2>LoRAs <span id="loraCount" class="tip"></span></h2><p>Installed adapters appear here. Enable only the ones you want on this render.</p>
     <div id="loraList" class="refs"><div class="tip">Connect ComfyUI to load installed LoRAs.</div></div>
@@ -121,13 +127,13 @@
   <div class="stage-top"><h2>Workspace</h2><span>Generate · review · save</span></div>
   <div class="stage" id="stage"><div class="stage-empty"><b>Your video will appear here</b>Choose a mode, describe the scene, and generate. Progress and the final clip stay in this workspace.</div></div>
   <div class="output-card"><div class="statusline"><span id="status">Connect ComfyUI to begin</span><span id="percent">—</span></div><div class="progress" id="progress"><i id="progressFill"></i></div><div class="statusline"><span id="timer">—</span><span id="remaining">Time remaining: —</span></div><div id="uploadStatus" class="queue-info" role="status" aria-live="polite" hidden></div><div id="uploadProgress" class="progress" hidden><i id="uploadProgressFill"></i></div><div id="queueInfo" class="queue-info" aria-live="polite">Queue: —</div></div>
-  <div class="output-card hidden" id="resultCard"><h2>Current video</h2><p>Videos stay on this server until deleted. Pin favorites, download a copy, or delete.</p><div class="secondary-actions" style="margin-top:11px"><button id="keep" class="button alt">Pin video</button><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><button id="extendVideo" class="button alt" style="border-color:var(--acid);color:var(--acid)">Extend clip</button><button id="discard" class="button alt">Delete</button></div></div>
+  <div class="output-card hidden" id="resultCard"><h2>Current video</h2><p>Videos stay on this server until deleted. Pin favorites, download a copy, or delete.</p><div class="secondary-actions" style="margin-top:11px"><button id="keep" class="button alt">Pin video</button><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><select id="extendSourceMethod" aria-label="Extend source method"><option value="generated">Saved latent context</option><option value="imported">Video context · re-encode</option></select><button id="extendVideo" class="button alt" style="border-color:var(--acid);color:var(--acid)">Extend clip</button><button id="purgeContext" class="button alt">Remove extend data</button><button id="acceptTake" class="button alt">Accept take</button><button id="restoreTake" class="button alt">Use original settings</button><button id="discard" class="button alt">Delete</button></div><div class="row" style="margin-top:10px"><select id="resultRole"><option value="start_frame">Use frame as start</option><option value="end_frame">Use frame as end</option><option value="reference">Use frame as reference</option><option value="video">Use video as reference</option></select><input id="resultFrameIndex" type="number" min="0" value="0" aria-label="Video frame index"><button id="useResult" class="button alt smallbtn">Use result</button></div><div class="row" style="margin-top:8px"><select id="mediaFormat"><option value="wav">Audio WAV</option><option value="muted_mp4">Muted video</option></select><button id="exportMedia" class="button alt smallbtn">Export existing media</button></div></div>
   <div class="output-card hidden" id="sequenceCard">
    <div style="display:flex;align-items:center;justify-content:space-between">
     <h2 style="margin:0">Multi-Clip Sequence</h2>
     <span id="sequenceDuration" class="tip">0 clips · 0.00s</span>
    </div>
-   <p>Ordered sequence of accepted takes with seamless audio.</p>
+   <p>Ordered accepted takes. Review joins on the GPU test server before approving quality.</p>
    <div id="clipStrip" class="prompt-assets" style="margin-top:8px"></div>
    <div class="row" style="margin-top:10px">
     <button id="btnAssembleSequence" class="button alt smallbtn" type="button" style="border-color:var(--acid);color:var(--acid)">Assemble &amp; Export Sequence</button>
@@ -143,6 +149,7 @@
 <script src="./h3/prompt-compiler.js"></script>
 <script src="./h3/graph-builder.js"></script>
 <script src="./h3/project-controller.js"></script>
+<script src="./lab-ui.js"></script>
 <script src="./studio.js?v=20261001-frames-node-fix"></script>
 </body>
 </html>

@@ -1,4 +1,6 @@
-# H3 Higgsfield — MiniMax H3 video + Qwen Image studio
+# H3 Higgsfield V2 — isolated reviewed lab
+
+**V2 installation:** use [the isolated server guide](docs/lab/INSTALL_AND_ROLLBACK.md) and [review evidence](docs/lab/TEST_REPORT.md). The original installers below belong to the production baseline; do not use them to overwrite production. V2 keeps its own process, port, projects and outputs. GPU generation and seam quality remain pending live acceptance.
 
 An independent, creator-friendly interface for **MiniMax H3 video with native audio** and **Qwen Image 2.1 creation/editing**. ComfyUI runs behind the pages; creators never need the node canvas. This project is not affiliated with Higgsfield.
 

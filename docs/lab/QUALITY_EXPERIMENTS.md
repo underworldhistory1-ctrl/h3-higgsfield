@@ -1,43 +1,15 @@
-# H3 Studio Lab — Bounded Quality Experiments
+# Optional quality investigations — not implemented or GPU verified
 
-This document records the evaluation, architecture, and promotion criteria for the two optional quality investigations specified in Task 8.
+Latent Upscaler and AudioRefine remain research candidates listed in lab/dependencies.lock.json. No functioning UI toggle or integration is claimed. No experiment, visual verdict, performance estimate or quality improvement has been established on the authorized GPU server.
 
----
+The previous handoff described a 16-channel combined latent layout. That is incorrect for this pinned H3 implementation: native H3 uses a NestedTensor with video [B,24,T,H/16,W/16] and audio [B,32,2,T40]. Do not implement a samples[:, :16] audio/video split.
 
-## 1. Latent Upscaler / Refine
+Before any optional implementation:
 
-### Target Repository
-`LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler` (commit `40316cf008b2fd8663263270669eb4da23f89d2c`, MIT).
+1. Inspect the pinned candidate's actual node schema, dependencies and license. Confirm it supports this exact native AV layout; do not infer compatibility from a repository title.
+2. Keep the ordinary native pipeline as the comparison. Use identical source inputs, checkpoint, canvas and initial seed, recording any extra sampling/refinement cost.
+3. For video refinement, prove the audio stream is preserved and measure frame/audio alignment. For audio refinement, prove the video tensor and decoded frame count do not change.
+4. Test memory and runtime on the actual server. No fixed VRAM figures or chunk sizes are asserted without measurements.
+5. Review identity, motion, lip sync, audio artifacts and joins. Keep failed experiments disabled and retain the baseline output.
 
-### Invariants & Gotchas
-1. **Node Schema Incompatibility**:
-   Do NOT install the community `Plus` fork alongside the original upscaler. They register identical node IDs (`MiniMaxH3LatentUpscaler`) with conflicting widget schemas, leading to silent graph execution failures in ComfyUI.
-2. **Audio Protection**:
-   H3 latent upscaling operates strictly on the 16-channel video latent. Audio latents must be detached prior to the refine pass and re-muxed untouched. Refinement must NEVER resample or drift dialogue.
-3. **Memory Limits**:
-   Temporal chunking must be strictly enforced. Full 15-second latents (362 frames) at 2K exceed 48 GB VRAM during full-window cross-attention. Chunk size must default to 32–64 frames with overlap blending.
-
-### Verdict & Gating
-- **Local/Development Status:** Schemas cataloged; dependency pinned in `lab/dependencies.lock.json`.
-- **GPU Testing Gate:** Pending remote validation on the authorized online GPU server.
-- **Promotion Rule:** Gated behind Advanced settings. It will NOT replace the `Original quality` default pipeline.
-
----
-
-## 2. AudioRefine
-
-### Target Repository
-`Adudeguyman/ComfyUI-H3-AudioRefine` (commit `d78d34f2f1100b0422047e9d784a3bdb4e1061d3`, MIT).
-
-### Invariants & Gotchas
-1. **Video Latent Invariance**:
-   AudioRefine targets the audio latent stream to reduce noise in high-frequency background ambience. A tensor-level invariance check must prove that video latents (`samples[:, :16, ...]`) remain bit-identical before and after the audio refine node.
-2. **Computational Cost**:
-   Audio refinement steps run additional diffusion iterations on the audio VAE / denoiser. It must not be marketed as a zero-cost post-process or TTS engine.
-3. **Turbo Compatibility**:
-   When used with the FL2VA Turbo LoRA, audio refine steps must be matched to Turbo's 4–8 step schedule to avoid audio over-smoothing.
-
-### Verdict & Gating
-- **Local/Development Status:** Architecture reviewed; adapter contracts isolated.
-- **GPU Testing Gate:** Pending remote validation on the authorized online GPU server.
-- **Promotion Rule:** Off by default. Available only when explicitly enabled on compatible audio workloads.
+Only add an option if the integration works and a measured practical benefit justifies it. Do not install competing addons with conflicting node IDs. These investigations are not prerequisites for testing the reviewed core lab.

@@ -32,8 +32,21 @@
     const prompt = renderSpec.compiled_prompt || '';
     const width = Number(renderSpec.width) || 1280;
     const height = Number(renderSpec.height) || 704;
-    const length = Number(renderSpec.target_frames || renderSpec.duration) || 124;
-    const seed = Number(renderSpec.seed) || 42;
+    const seconds = Number(renderSpec.target_seconds ?? renderSpec.duration_seconds ?? 124 / 24);
+    const length = Number(renderSpec.target_frames ?? (5 + 17 * Math.round((seconds * 24 - 5) / 17)));
+    const seed = Number(renderSpec.seed ?? 42);
+    if (!Number.isSafeInteger(seed) || seed < 0) throw new Error("Seed must be a nonnegative safe integer.");
+    if (renderSpec.fps != null && Number(renderSpec.fps) !== 24) throw new Error("H3 requires 24 fps.");
+    if (!["text", "frames", "refs"].includes(mode)) throw new Error("Unknown generation mode.");
+    if (!Number.isInteger(length) || length < 5 || (length - 5) % 17 !== 0) throw new Error("Target frames must follow the H3 5 + 17k grid.");
+    const contextLength = Number(renderSpec.continuation?.context_length ?? 39);
+    if (renderSpec.continuation) {
+      const cont = renderSpec.continuation;
+      if (!["generated", "imported"].includes(cont.type)) throw new Error("Unknown continuation type.");
+      if (!(cont.type === "generated" ? cont.source_token : cont.source_file)) throw new Error("Continuation source is missing.");
+      if (!Number.isInteger(contextLength) || contextLength < 39 || (contextLength - 39) % 51 !== 0 || contextLength >= length) throw new Error("Continuation context must be an exact shared AV boundary shorter than the target.");
+      if (capabilities.continuation_ready !== true) throw new Error("AV continuation is unavailable: verified durable context loading and frame/sample-exact trimming and assembly are required before rendering.");
+    }
     const steps = Number(renderSpec.steps) || (renderSpec.render_method === 'turbo' ? 6 : 20);
     const method = renderSpec.render_method || 'native';
 
@@ -77,29 +90,33 @@
       "12": { class_type: "H3SaveVideo", inputs: { video: ["11", 0], filename_prefix: "video/h3_studio_" + token } },
     };
 
+    const allocate = (start) => { let id = start; while (g[String(id)]) id++; return String(id); };
+
     // LoRA chain
     let modelLink = ["1", 0];
     const loras = (renderSpec.loras || []).filter(l => l.enabled);
     loras.forEach((lora, idx) => {
-      const loraId = String(50 + idx);
+      const loraId = allocate(50);
       g[loraId] = {
         class_type: "LoraLoaderModelOnly",
-        inputs: { model: modelLink, lora_name: lora.name, strength_model: Number(lora.strength) || 1.0 }
+        inputs: { model: modelLink, lora_name: lora.name, strength_model: Number(lora.strength ?? 1.0) }
       };
       modelLink = [loraId, 0];
     });
 
     if (method === "turbo" && !isRefs) {
-      g["60"] = {
+      const turboId = allocate(60);
+      g[turboId] = {
         class_type: "LoraLoaderModelOnly",
         inputs: { model: modelLink, lora_name: TURBO_NAME, strength_model: 0.9 }
       };
-      modelLink = ["60", 0];
+      modelLink = [turboId, 0];
     }
     g["2"].inputs.model = modelLink;
 
     if (method === "spectrum") {
-      g["61"] = {
+      const methodId = allocate(61);
+      g[methodId] = {
         class_type: "SpectrumApplyMiniMaxH3",
         inputs: {
           model: ["2", 0], enabled: true, blend_weight: 0.5, degree: 1, ridge_lambda: 0.1,
@@ -108,9 +125,10 @@
           offline_archive_storage: "system_ram", audio_blend_weight: 0, offline_smoothing_replay: true
         }
       };
-      g["8"].inputs.model = ["61", 0];
+      g["8"].inputs.model = [methodId, 0];
     } else if (method === "motioncache") {
-      g["61"] = {
+      const methodId = allocate(61);
+      g[methodId] = {
         class_type: "MiniMaxH3MotionCache",
         inputs: {
           model: ["2", 0], reuse_threshold: 0.15, motion_strength: 1, warmup_steps: 4,
@@ -118,17 +136,22 @@
           subsample_factor: 8, verbose: false
         }
       };
-      g["8"].inputs.model = ["61", 0];
+      g["8"].inputs.model = [methodId, 0];
     }
 
     // Frames mode inputs
     if (mode === 'frames') {
-      if (resolvedAssets.first) {
-        g["15"] = { class_type: "LoadImage", inputs: { image: resolvedAssets.first } };
+      const frames = renderSpec.frames || {};
+      const first = resolvedAssets.first || resolvedAssets[frames.first];
+      const last = resolvedAssets.last || resolvedAssets[frames.last];
+      if ((frames.first && !first) || (frames.last && !last)) throw new Error('A selected frame has not been resolved.');
+      if (!first && !last) throw new Error('Frames mode requires a resolved start or end image.');
+      if (first) {
+        g["15"] = { class_type: "LoadImage", inputs: { image: first } };
         g["6"].inputs.first_frame = ["15", 0];
       }
-      if (resolvedAssets.last) {
-        g["16"] = { class_type: "LoadImage", inputs: { image: resolvedAssets.last } };
+      if (last) {
+        g["16"] = { class_type: "LoadImage", inputs: { image: last } };
         g["6"].inputs.last_frame = ["16", 0];
       }
     }
@@ -143,18 +166,21 @@
       let vidSlot = 0;
       let audSlot = 0;
 
-      const ordered = renderSpec.references || [];
+      const refs = renderSpec.references || [];
+      if (!refs.length) throw new Error('References mode requires at least one reference.');
+      if (refs.some(ref => !['image', 'video', 'audio'].includes(ref.kind))) throw new Error('Unknown reference kind.');
+      const ordered = ['image', 'video', 'audio'].flatMap(kind => refs.filter(ref => ref.kind === kind));
       for (const ref of ordered) {
         const file = resolvedAssets[ref.asset_id] || resolvedAssets[ref.alias];
-        if (!file) continue;
+        if (!file) throw new Error(`Reference ${ref.alias || ref.asset_id} has not been resolved.`);
 
         if (ref.kind === 'image') {
-          const loadId = String(nextNodeId++);
+          const loadId = allocate(nextNodeId++);
           g[loadId] = { class_type: "LoadImage", inputs: { image: file } };
           g["6"].inputs[`ref_images.ref_image_${imgSlot++}`] = [loadId, 0];
         } else if (ref.kind === 'video') {
-          const loadId = String(nextNodeId++);
-          const splitId = String(nextNodeId++);
+          const loadId = allocate(nextNodeId++);
+          const splitId = allocate(nextNodeId++);
           const currentSlot = vidSlot++;
           g[loadId] = { class_type: "LoadVideo", inputs: { file: file } };
           g[splitId] = { class_type: "GetVideoComponents", inputs: { video: [loadId, 0] } };
@@ -163,7 +189,7 @@
             g["6"].inputs[`ref_video_audios.ref_video_audio_${currentSlot}`] = [splitId, 1];
           }
         } else if (ref.kind === 'audio') {
-          const loadId = String(nextNodeId++);
+          const loadId = allocate(nextNodeId++);
           g[loadId] = { class_type: "LoadAudio", inputs: { audio: file } };
           g["6"].inputs[`ref_audios.ref_audio_${audSlot++}`] = [loadId, 0];
         }
@@ -175,74 +201,68 @@
     const guides = renderSpec.guides || [];
     if (guides.length > 0) {
       guides.forEach((guide, gIdx) => {
-        const guideNodeId = String(70 + gIdx * 2);
-        const guideImgNodeId = String(70 + gIdx * 2 + 1);
-        const guideFile = resolvedAssets[guide.asset_id] || guide.filename;
+        const guideNodeId = allocate(70);
+        const guideImgNodeId = allocate(Number(guideNodeId) + 1);
+        const guideFile = resolvedAssets[guide.asset_id] || guide.file || guide.filename;
+        if (!guideFile) throw new Error('Temporal guide image has not been resolved.');
+        if (typeof guide.frame_idx !== 'number' || !Number.isInteger(guide.frame_idx)) throw new Error('Temporal guide frame index must be an integer.');
+        const frameIdx = guide.frame_idx + (guide.relative_to_new_content && renderSpec.continuation ? contextLength : 0);
+        if (frameIdx < 0 || frameIdx >= length) throw new Error('Temporal guide frame index is outside the target timeline.');
 
-        g[guideImgNodeId] = { class_type: "LoadImage", inputs: { image: guideFile } };
-        g[guideNodeId] = {
-          class_type: "MiniMaxH3AddGuide",
-          inputs: {
-            positive: currentPositive,
-            latent: ["6", 1],
-            frame_idx: Number(guide.frame_idx) || 0,
-            vae: ["4", 0],
-            image: [guideImgNodeId, 0],
+        const kind = guide.kind || 'image';
+        if (!['image', 'audio', 'video'].includes(kind)) throw new Error('Unknown temporal guide kind.');
+        const guideInputs = { positive: currentPositive, latent: ['6', 1], frame_idx: frameIdx };
+        if (kind === 'audio') {
+          if (capabilities.guide_audio !== true) throw new Error('Native timed audio guides are unavailable on this server.');
+          g[guideImgNodeId] = { class_type: 'LoadAudio', inputs: { audio: guideFile } };
+          guideInputs.audio = [guideImgNodeId, 0];
+          guideInputs.audio_vae = ['5', 0];
+        } else if (kind === 'video') {
+          if (capabilities.guide_video !== true) throw new Error('Native timed video guides are unavailable on this server.');
+          if (Number(guide.fps) !== 24) throw new Error('Video guide must have verified canonical 24 fps metadata.');
+          const sourceFrames = Number(guide.frame_count ?? guide.duration_frames);
+          if (!Number.isInteger(sourceFrames) || sourceFrames < 1) throw new Error('Video guide requires a verified frame count.');
+          const span = sourceFrames < 5 ? 1 : 5 + 17 * Math.floor((sourceFrames - 5) / 17);
+          if (frameIdx + span > length) throw new Error('Video guide extends past the target timeline.');
+          if (guide.use_audio && capabilities.guide_audio !== true) throw new Error('Native timed video audio guides are unavailable on this server.');
+          g[guideImgNodeId] = { class_type: 'LoadVideo', inputs: { file: guideFile } };
+          const splitId = allocate(Number(guideImgNodeId) + 1);
+          g[splitId] = { class_type: 'GetVideoComponents', inputs: { video: [guideImgNodeId, 0] } };
+          guideInputs.image = [splitId, 0];
+          guideInputs.vae = ['4', 0];
+          if (guide.use_audio) {
+            guideInputs.audio = [splitId, 1];
+            guideInputs.audio_vae = ['5', 0];
           }
-        };
+        } else {
+          g[guideImgNodeId] = { class_type: 'LoadImage', inputs: { image: guideFile } };
+          guideInputs.vae = ['4', 0];
+          guideInputs.image = [guideImgNodeId, 0];
+        }
+        g[guideNodeId] = { class_type: 'MiniMaxH3AddGuide', inputs: guideInputs };
         currentPositive = [guideNodeId, 0];
       });
       g["8"].inputs.positive = currentPositive;
     }
 
-    // AV Latent Continuation
     if (renderSpec.continuation) {
       const cont = renderSpec.continuation;
-      const contNodeId = "85";
-      const loadLatentNodeId = "86";
-
-      if (cont.type === "generated") {
-        g[loadLatentNodeId] = {
-          class_type: "H3LoadSavedLatent",
-          inputs: { token: cont.source_token }
-        };
-        g[contNodeId] = {
-          class_type: "MiniMaxH3GeneratedAVMaskedContext",
-          inputs: {
-            latent: ["6", 1],
-            source_latent: [loadLatentNodeId, 0],
-            context_length: Number(cont.context_length) || 39,
-            audio_feather_ticks: Number(cont.audio_feather_ticks) || 8,
-          }
-        };
-        g["8"].inputs.latent_image = [contNodeId, 0];
-      } else if (cont.type === "imported") {
-        const loadVidNodeId = "87";
-        g[loadVidNodeId] = {
-          class_type: "LoadVideo",
-          inputs: { file: cont.source_file }
-        };
-        const splitVidNodeId = "88";
-        g[splitVidNodeId] = {
-          class_type: "GetVideoComponents",
-          inputs: { video: [loadVidNodeId, 0] }
-        };
-        g[contNodeId] = {
-          class_type: "MiniMaxH3ExistingVideoMaskedContext",
-          inputs: {
-            latent: ["6", 1],
-            vae: ["4", 0],
-            audio_vae: ["5", 0],
-            source_frames: [splitVidNodeId, 0],
-            source_audio: [splitVidNodeId, 1],
-            source_fps: 24,
-            context_length: Number(cont.context_length) || 39,
-            crop: "disabled",
-            audio_feather_ticks: Number(cont.audio_feather_ticks) || 8,
-          }
-        };
-        g["8"].inputs.latent_image = [contNodeId, 0];
+      const contextId = allocate(85);
+      const sourceId = allocate(Number(contextId) + 1);
+      if (cont.type === 'generated') {
+        g[sourceId] = { class_type: 'H3LabLoadContext', inputs: { token: cont.source_token, model_id: isRefs ? MODEL_REF : MODEL_FL, width, height, fps: 24 } };
+        g[contextId] = { class_type: 'MiniMaxH3GeneratedAVMaskedContext', inputs: { latent: ['6', 1], source_latent: [sourceId, 0], context_length: contextLength, audio_feather_ticks: Number(cont.audio_feather_ticks ?? 8) } };
+      } else {
+        g[sourceId] = { class_type: 'LoadVideo', inputs: { file: cont.source_file } };
+        const splitId = allocate(Number(sourceId) + 1);
+        g[splitId] = { class_type: 'GetVideoComponents', inputs: { video: [sourceId, 0] } };
+        g[contextId] = { class_type: 'MiniMaxH3ExistingVideoMaskedContext', inputs: { latent: ['6', 1], vae: ['4', 0], audio_vae: ['5', 0], source_frames: [splitId, 0], source_audio: [splitId, 1], source_fps: 24, context_length: contextLength, crop: 'disabled', audio_feather_ticks: Number(cont.audio_feather_ticks ?? 8) } };
       }
+      g['8'].inputs.latent_image = [contextId, 0];
+      const trimId = allocate(90);
+      g[trimId] = { class_type: 'H3LabTrimAV', inputs: { images: ['9', 0], audio: ['10', 0], trim_frames: [contextId, 1], fps: 24 } };
+      g['11'].inputs.images = [trimId, 0];
+      g['11'].inputs.audio = [trimId, 1];
     }
 
     return g;

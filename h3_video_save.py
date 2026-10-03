@@ -25,13 +25,13 @@ class H3ReleaseForDecode:
         return {"required": {
             "samples": ("LATENT",),
             "token": ("STRING", {"default": ""}),
-        }}
+        }, "hidden": {"prompt": "PROMPT"}}
 
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "release"
     CATEGORY = "H3 Studio"
 
-    def release(self, samples, token):
+    def release(self, samples, token, prompt=None):
         if not re.fullmatch(r"[a-f0-9]{12}", token):
             raise ValueError("Invalid H3 render token")
         folder = pathlib.Path(folder_paths.get_output_directory()) / "latent"
@@ -52,6 +52,8 @@ class H3ReleaseForDecode:
         try:
             save_file(tensors, str(part))
             os.replace(part, target)
+            from .h3_continuation import preserve_context
+            preserve_context(target, token, prompt, tensors)
         finally:
             part.unlink(missing_ok=True)
 

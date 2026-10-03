@@ -32,8 +32,8 @@
 
     async fetchJson(endpoint, options = {}) {
       const res = await fetch(this.apiUrl(endpoint), {
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
         ...options,
+        headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) },
       });
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
@@ -46,6 +46,39 @@
         throw err;
       }
       return await res.json();
+    }
+
+    async uploadAsset(file, projectId = this.currentProject?.project_id) {
+      const body = new FormData();
+      body.append('file', file);
+      if (projectId) body.append('project_id', projectId);
+      const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+      const data = await this.fetchJson('/h3_studio/lab/assets' + query, { method: 'POST', body });
+      return data.asset || data;
+    }
+
+    async getAsset(assetId) {
+      const data = await this.fetchJson(`/h3_studio/lab/assets/${encodeURIComponent(assetId)}`);
+      return data.asset || data;
+    }
+
+    async resolveAsset(assetId) {
+      const data = await this.fetchJson(`/h3_studio/lab/assets/${encodeURIComponent(assetId)}/resolve`, { method: 'POST', body: '{}' });
+      if (!data.filename) throw new Error('Asset resolution returned no server filename.');
+      return data.filename;
+    }
+
+    async mediaBlob(assetId) {
+      const res = await fetch(this.apiUrl(`/h3_studio/lab/assets/${encodeURIComponent(assetId)}/file`));
+      if (!res.ok) throw new Error(`Cannot load asset media: HTTP ${res.status}`);
+      return res.blob();
+    }
+
+    async importBundle(file) {
+      const body = new FormData();
+      body.append('file', file);
+      const project = await this.fetchJson('/h3_studio/lab/projects/import', { method: 'POST', body });
+      return this.loadProject(project.project_id);
     }
 
     async createProject(name = 'New Project', canvas = null) {

@@ -114,6 +114,15 @@ class AssetService:
                 return None
             return dict(rec)
 
+    def attach_project(self, asset_id: str, project_id: str):
+        with self._lock:
+            record = self._assets.get(asset_id)
+            if not record:
+                raise ValueError("Unknown project asset")
+            if project_id not in record.setdefault("projects", []):
+                record["projects"].append(project_id)
+                self._save_manifest_locked()
+
     def acquire_lease(self, identifier: str, owner_id: str):
         """Acquire a lease on an asset_id or a raw filename."""
         if not identifier or not owner_id:

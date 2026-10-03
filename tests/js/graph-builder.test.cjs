@@ -114,7 +114,7 @@ describe('H3 Graph Builder', () => {
 
   test('generated continuation links MiniMaxH3GeneratedAVMaskedContext', () => {
     const spec = {
-      mode: 'refs',
+      mode: 'text',
       compiled_prompt: 'Continuation prompt',
       width: 1280,
       height: 704,
@@ -128,10 +128,10 @@ describe('H3 Graph Builder', () => {
       }
     };
 
-    const g = buildGraph(spec, {});
+    const g = buildGraph(spec, {}, { continuation_ready: true });
 
     // Latent load node 86
-    assert.equal(g["86"].class_type, "H3LoadSavedLatent");
+    assert.equal(g["86"].class_type, "H3LabLoadContext");
     assert.equal(g["86"].inputs.token, "source_latent_tok");
 
     // Context node 85
@@ -160,7 +160,7 @@ describe('H3 Graph Builder', () => {
       }
     };
 
-    const g = buildGraph(spec, {});
+    const g = buildGraph(spec, {}, { continuation_ready: true });
 
     assert.equal(g["85"].class_type, "MiniMaxH3ExistingVideoMaskedContext");
     assert.deepEqual(g["85"].inputs.latent, ["6", 1]);
@@ -169,4 +169,61 @@ describe('H3 Graph Builder', () => {
     assert.equal(g["85"].inputs.context_length, 39);
     assert.deepEqual(g["8"].inputs.latent_image, ["85", 0]);
   });
+});
+
+
+test('zero seed and LoRA strength survive; many guides cannot overwrite nodes', () => {
+  const guides = Array.from({length: 12}, (_, i) => ({file: `guide${i}.png`, frame_idx: i}));
+  const g = buildGraph({seed: 0, loras: Array.from({length: 12}, (_, i) => ({enabled: true, name: `lora${i}`, strength: 0})), guides, continuation: {type: 'generated', source_token: 'source', context_length: 39}}, {}, {continuation_ready: true});
+  assert.equal(g['8'].inputs.seed, 0);
+  const nodes = Object.values(g);
+  assert.equal(nodes.filter(n => n.class_type === 'LoraLoaderModelOnly').length, 12);
+  assert.ok(nodes.filter(n => n.class_type === 'LoraLoaderModelOnly').every(n => n.inputs.strength_model === 0));
+  assert.equal(nodes.filter(n => n.class_type === 'MiniMaxH3AddGuide').length, 12);
+  assert.equal(nodes.filter(n => n.class_type === 'H3LabTrimAV').length, 1);
+  assert.equal(g[g['11'].inputs.images[0]].class_type, 'H3LabTrimAV');
+  assert.deepEqual(g['11'].inputs.audio, [g['11'].inputs.images[0], 1]);
+});
+
+test('unresolved references and malformed guide timeline fail closed', () => {
+  assert.throws(() => buildGraph({mode: 'refs', references: [{kind: 'image', asset_id: 'missing'}]}), /not been resolved/);
+  for (const frame_idx of [-1, 124, 1.5, '2', NaN]) assert.throws(() => buildGraph({guides: [{file:'g.png', frame_idx}]}), /guide frame index/);
+  assert.throws(() => buildGraph({continuation: {type:'generated', source_token:'s'}}), /unavailable/);
+  assert.throws(() => buildGraph({continuation: {type:'unknown', source_token:'s'}}, {}, {continuation_ready:true}), /Unknown continuation/);
+});
+
+test('new-content guide offsets include protected AV context', () => {
+  const g = buildGraph({guides: [{file:'g.png', frame_idx:3, relative_to_new_content:true}], continuation:{type:'imported', source_file:'source.mp4', context_length:39}}, {}, {continuation_ready:true});
+  assert.equal(Object.values(g).find(n => n.class_type === 'MiniMaxH3AddGuide').inputs.frame_idx, 42);
+});
+
+
+test('timed audio and video guides bind actual native AV inputs', () => {
+  const guides = [{kind:'audio',file:'voice.wav',frame_idx:24},{kind:'video',file:'motion.mp4',frame_idx:30,fps:24,duration_frames:48,use_audio:true}];
+  const g=buildGraph({guides}, {}, {guide_audio:true,guide_video:true});
+  const nodes=Object.values(g).filter(n=>n.class_type==='MiniMaxH3AddGuide');
+  assert.equal(nodes.length,2);
+  assert.deepEqual(nodes[0].inputs.audio_vae,['5',0]);
+  assert.equal(nodes[0].inputs.image,undefined);
+  assert.equal(g[nodes[0].inputs.audio[0]].class_type,'LoadAudio');
+  assert.equal(g[nodes[1].inputs.image[0]].class_type,'GetVideoComponents');
+  assert.deepEqual(nodes[1].inputs.audio,[nodes[1].inputs.image[0],1]);
+  assert.deepEqual(nodes[1].inputs.vae,['4',0]);
+  assert.deepEqual(nodes[1].inputs.audio_vae,['5',0]);
+});
+
+test('timed AV guides fail closed without capability or verified video span', () => {
+  assert.throws(()=>buildGraph({guides:[{kind:'audio',file:'a.wav',frame_idx:0}]}),/audio guides are unavailable/);
+  assert.throws(()=>buildGraph({guides:[{kind:'video',file:'a.mp4',frame_idx:0}]}),/video guides are unavailable/);
+  assert.throws(()=>buildGraph({guides:[{kind:'video',file:'a.mp4',frame_idx:0,fps:24}]},{},{guide_video:true}),/verified frame count/);
+  assert.throws(()=>buildGraph({guides:[{kind:'video',file:'a.mp4',frame_idx:100,fps:24,duration_frames:48}]},{},{guide_video:true}),/past the target timeline/);
+});
+
+
+test('video guide validates the native cropped 17k+5 span', () => {
+  const spec={guides:[{kind:'video',file:'v.mp4',frame_idx:85,fps:24,frame_count:48}]};
+  const g=buildGraph(spec,{},{guide_video:true});
+  assert.equal(Object.values(g).find(n=>n.class_type==='MiniMaxH3AddGuide').inputs.frame_idx,85);
+  spec.guides[0].frame_idx=86;
+  assert.throws(()=>buildGraph(spec,{},{guide_video:true}),/past the target timeline/);
 });

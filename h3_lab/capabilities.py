@@ -32,7 +32,7 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     continuation_nodes = [
         "MiniMaxH3GeneratedAVMaskedContext",
         "MiniMaxH3ExistingVideoMaskedContext",
-        "MiniMaxH3AssembleExtension"
+        "H3LabLoadContext", "H3LabTrimAV"
     ]
     continuation_status = {name: (name in registered_nodes) for name in continuation_nodes}
 
@@ -67,14 +67,18 @@ def check_capabilities(folder_paths_module=None, nodes_module=None) -> dict:
     for name, ok in continuation_status.items():
         if not ok:
             missing_reasons.append(f"Continuation engine node '{name}' is not registered.")
+    for name, ok in models_status.items():
+        if not ok:
+            missing_reasons.append(f"Required model '{name}' is missing or incomplete.")
 
     return {
         "ffmpeg": {"ffmpeg": ffmpeg_ok, "ffprobe": ffprobe_ok},
         "native_nodes": native_status,
         "add_guide": add_guide_ready,
+        "guides_ready": add_guide_ready and all(native_status.values()) and bool(models_status) and all(models_status.values()),
         "continuation_nodes": continuation_status,
         "models": models_status,
-        "continuation_ready": all(continuation_status.values()),
+        "continuation_ready": all(continuation_status.values()) and all(native_status.values()) and bool(models_status) and all(models_status.values()),
         "ready": len(missing_reasons) == 0,
         "missing_reasons": missing_reasons,
     }

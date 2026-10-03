@@ -85,6 +85,15 @@ class TestH3Contexts(unittest.TestCase):
         self.assertEqual(self.service.get_disk_usage()["count"], 0)
         self.assertFalse((self.storage_root / rec["server_path"]).is_file())
 
+    def test_payload_tampering_is_rejected_before_tensor_loading(self):
+        video = torch.zeros(1, 24, 2, 44, 80)
+        audio = torch.zeros(1, 32, 2, 8)
+        rec = self.service.save_context(video, audio, "p1", "t1", 1280, 704, 124)
+        with (self.storage_root / rec["server_path"]).open("ab") as stream:
+            stream.write(b"changed")
+        with self.assertRaisesRegex(ValueError, "content hash mismatch"):
+            self.service.load_context(rec["context_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

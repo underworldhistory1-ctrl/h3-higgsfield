@@ -1,0 +1,62 @@
+const {chromium}=require(process.env.H3_TEST_PLAYWRIGHT || 'playwright');
+const {spawn}=require('node:child_process');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+(async()=>{
+  const port=18769,base=`http://127.0.0.1:${port}`;
+  const server=spawn(process.env.H3_TEST_PYTHON||'python',[path.join(__dirname,'cpu_fixture.py'),String(port)],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+  let stderr='',browser,page;server.stderr.on('data',chunk=>stderr+=chunk);
+  try{
+    for(let i=0;i<60;i++){try{await fetch(base+'/system_stats');break;}catch{await new Promise(resolve=>setTimeout(resolve,100));}}
+    browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1440,height:1100}});page.setDefaultTimeout(10000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await page.goto(base+'/extensions/h3_studio/image.html');
+    await page.waitForFunction(()=>state.ready&&!document.querySelector('#generate').disabled);
+    assert.equal(await page.evaluate(()=>state.generationEpoch),0);
+    await page.locator('#prompt').fill('A blue ceramic teapot on a table.');
+    await page.locator('#seed').fill('0');
+    await page.evaluate(()=>{generate();generate();});await page.waitForFunction(()=>!!state.activePromptId);
+    let captured=await(await fetch(base+'/__captured')).json(),graph=captured[0].prompt;assert.equal(captured.length,1,'Overlapping readiness checks submit exactly once');
+    assert.equal(graph.enc.class_type,'TextEncodeQwenImage21');assert.equal(graph.latent.class_type,'EmptyLatentImage');
+    assert.equal(graph.sampler.inputs.seed,0);assert.equal(graph.save.class_type,'QwenStudioSaveImage');
+    assert.match(graph.save.inputs.token,/^[a-f0-9]{12}$/);
+    assert.ok(Number.isInteger(await page.evaluate(()=>state.generationEpoch)));
+    await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+    const png=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;canvas.getContext('2d').fillRect(0,0,640,360);return canvas.toDataURL('image/png').split(',')[1];});
+    await page.locator('#referenceFiles').setInputFiles({name:'lighting.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+    await page.waitForFunction(()=>state.refs[0]?.width===640);
+    const alias=await page.evaluate(()=>state.refs[0].name);
+    await page.locator('#prompt').fill('Keep @'+alias+' lighting and make the teapot red.');
+    await page.locator('#generate').click();await page.waitForFunction(()=>!!state.activePromptId);
+    captured=await(await fetch(base+'/__captured')).json();graph=captured[1].prompt;
+    assert.equal(graph.load1.class_type,'LoadImage');assert.equal(graph.cache.class_type,'QwenImage21Cache');
+    assert.deepEqual(graph.enc.inputs['images.image_1'],['load1',0]);assert.deepEqual(graph.sampler.inputs.latent_image,['enc',2]);
+    assert.ok(!graph.enc.inputs.prompt.includes('@'+alias));
+    await fetch(base+'/__image_running');
+    const runningId=await page.evaluate(()=>state.activePromptId);
+    await page.locator('#cancel').click();
+    await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('cannot safely interrupt a running image'));
+    assert.equal(await page.evaluate(()=>state.activePromptId),runningId);
+    assert.equal(await page.evaluate(()=>state.busy),true);
+    assert.match(await page.locator('#error').textContent(),/cannot safely interrupt a running image/);
+    assert.equal((await(await fetch(base+'/__interrupt_count')).json()).count,0);
+    await fetch(base+'/__image_pending');await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+    await page.route('**/prompt',async route=>{await route.fetch();await route.abort('failed');});
+    await page.locator('#generate').click();await page.waitForFunction(()=>state.busy&&document.querySelector('#error').textContent.includes('acknowledgement was lost'));
+    assert.ok(await page.evaluate(()=>state.uploaded.length>0));
+    assert.equal(await page.locator('#generate').isVisible(),false);
+    await page.unroute('**/prompt');await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy);
+    await fetch(base+'/__image_standby');await page.locator('#retry').click();
+    await page.waitForFunction(()=>!state.ready&&document.querySelector('#generate').disabled);
+    assert.match(await page.locator('#profileNote').textContent(),/inference is disabled/);
+    assert.match(await page.locator('#connectionText').textContent(),/inference is disabled/);
+    assert.ok(!(await page.locator('#profileNote').textContent()).includes('weights are not installed'));
+    await page.evaluate(()=>generate());
+    assert.equal((await(await fetch(base+'/__captured')).json()).length,3,'Standby refuses image submission');
+    assert.match(await page.locator('#error').textContent(),/inference is disabled/);
+    assert.deepEqual(errors,[]);
+    if(process.env.H3_TEST_IMAGE_SCREENSHOT) await page.screenshot({path:process.env.H3_TEST_IMAGE_SCREENSHOT,fullPage:true});
+    console.log(JSON.stringify({passed:true,checks:['Qwen create graph queued once despite overlapping readiness checks','seed zero and defined generation epoch','uploaded image edit graph queued','standby reason and disabled generation','running cancellation refuses global interrupt','queued cancellation verifies removal','lost acknowledgement retains inputs and recovers by token'],errors},null,2));
+  }catch(error){console.error(error.stack);if(stderr)console.error(stderr);if(page) console.error(await page.locator('#error').textContent());process.exitCode=1;}
+  finally{if(browser)await browser.close();server.kill();}
+})();

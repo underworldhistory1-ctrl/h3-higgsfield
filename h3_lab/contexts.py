@@ -14,8 +14,7 @@ import threading
 import time
 import uuid
 
-import torch
-from safetensors.torch import load_file, save_file
+from .paths import owned_path
 
 _LOG = logging.getLogger("h3_lab.contexts")
 
@@ -55,7 +54,7 @@ class ContextService:
         payload = f"{width}x{height}@{fps}:{model_id}:{adapter_version}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def save_context(self, video_tensor: torch.Tensor, audio_tensor: torch.Tensor,
+    def save_context(self, video_tensor, audio_tensor,
                      project_id: str, take_id: str, width: int, height: int,
                      frame_count: int, fps: int = 24, model_identities: dict = None) -> dict:
         """
@@ -63,15 +62,17 @@ class ContextService:
         video_tensor: [1, 24, T, H/16, W/16]
         audio_tensor: [1, 32, 2, T40]
         """
+        import torch
+        from safetensors.torch import save_file
         context_id = str(uuid.uuid4())
         filename = f"ctx_{context_id}.safetensors"
         target_path = self.contexts_dir / filename
         part_path = target_path.with_suffix(".part")
 
         # Validate shapes and dtypes
-        if video_tensor.ndim != 5 or video_tensor.shape[1] != 24:
+        if video_tensor.ndim != 5 or video_tensor.shape[:2] != (1, 24) or list(video_tensor.shape[-2:]) != [height // 16, width // 16]:
             raise ValueError(f"Invalid video latent tensor shape: {video_tensor.shape}")
-        if audio_tensor.ndim != 4 or audio_tensor.shape[1] != 32:
+        if audio_tensor.ndim != 4 or audio_tensor.shape[:3] != (1, 32, 2):
             raise ValueError(f"Invalid audio latent tensor shape: {audio_tensor.shape}")
 
         tensors = {
@@ -93,7 +94,8 @@ class ContextService:
                 h.update(chunk)
         payload_hash = h.hexdigest()
 
-        fingerprint = self.calculate_fingerprint(width, height, fps)
+        model_key = json.dumps(model_identities or {}, sort_keys=True)
+        fingerprint = self.calculate_fingerprint(width, height, fps, model_key, "MultiRef-v1")
 
         record = {
             "schema_version": 1,
@@ -121,7 +123,8 @@ class ContextService:
 
         return record
 
-    def load_context(self, context_id: str, target_width: int = None, target_height: int = None) -> tuple:
+    def load_context(self, context_id: str, target_width: int = None, target_height: int = None,
+                     model_identities=None, fps=24) -> tuple:
         """
         Loads AV latent tensors and validates compatibility against target dimensions.
         Returns (video_tensor, audio_tensor, record).
@@ -139,14 +142,32 @@ class ContextService:
                     f"but target is {target_width}x{target_height}"
                 )
 
-        full_path = self.storage_root / rec["server_path"]
+        full_path = owned_path(self.storage_root, rec["server_path"])
         if not full_path.is_file():
             raise FileNotFoundError(f"Context safetensors file missing: {full_path}")
 
+        if rec.get("fps") != fps:
+            raise ValueError("Context FPS mismatch")
+        if model_identities is not None and rec.get("model_identities") != model_identities:
+            raise ValueError("Context model identities mismatch")
+        fingerprint = self.calculate_fingerprint(canvas.get("width"), canvas.get("height"), fps,
+            json.dumps(rec.get("model_identities", {}), sort_keys=True), rec.get("adapter_version"))
+        if rec.get("fingerprint") != fingerprint:
+            raise ValueError("Context compatibility fingerprint mismatch")
+        digest = hashlib.sha256()
+        with full_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != rec.get("content_hash"):
+            raise ValueError("Context content hash mismatch")
+        from safetensors.torch import load_file
         tensors = load_file(str(full_path), device="cpu")
         if "video_latent" not in tensors or "audio_latent" not in tensors:
             raise ValueError(f"Corrupt context file: missing video_latent or audio_latent streams")
 
+        for key, shape_key in (("video_latent", "video_latent_shape"), ("audio_latent", "audio_latent_shape")):
+            if list(tensors[key].shape) != rec.get(shape_key):
+                raise ValueError("Context tensor shape mismatch")
         return tensors["video_latent"], tensors["audio_latent"], dict(rec)
 
     def get_disk_usage(self) -> dict:
@@ -163,6 +184,6 @@ class ContextService:
             rec = self._contexts.pop(context_id, None)
             if rec:
                 self._save_manifest_locked()
-                path = self.storage_root / rec.get("server_path", "")
+                path = owned_path(self.storage_root, rec.get("server_path", ""), require_file=False)
                 if path.is_file():
                     path.unlink(missing_ok=True)

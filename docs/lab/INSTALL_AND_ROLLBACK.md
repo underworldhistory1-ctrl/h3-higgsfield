@@ -1,76 +1,78 @@
-# H3 Studio Lab — Installation, Server Setup & Rollback Guide
+# Isolated online installation and rollback
 
-## 1. Remote Test Server Installation
+The separate V2 repository is https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield-v2. The authorized online installation uses /output/h3-studio-v2, separate from production and LTX 2.5. Transfer a private repository using the reviewed Git bundle without placing GitHub credentials on the server. Server commands below never run local model inference.
 
-> **Policy Reminder:**
-> Inference must run ONLY on an authorized online GPU test server. Do not install ComfyUI, CUDA, or weights on the local development machine.
+## Required isolation
 
-### Prerequisites on Online Test Server
-- Ubuntu 22.04+ with NVIDIA GPU (24GB+ VRAM recommended, e.g. RTX 4090 / A100 / L40S)
-- Python 3.10–3.12 with PyTorch 2.3+ CUDA
-- FFmpeg 6.0+ installed and available in PATH
-- Pinned ComfyUI: Commit `3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251`
+Use a separate ComfyUI checkout/process, separate custom_nodes, input, output, temporary directory and port. Do not install both H3 Studio copies in the same process: they share node IDs and HTTP paths. Stop or drain production inference before the lab loads models on the shared GPU; a second port does not isolate VRAM.
 
-### Step-by-Step Remote Setup Script
+Use your server's existing compatible Python environment and existing weights. Do not infer CPU/CUDA versions from developer unit tests. Follow the baseline START_HERE.md and COMPATIBILITY.md for model dependencies. No weights or CUDA installation is required on the Windows development machine.
+
+## Reproducible checkout
+
+On the test server, replace LAB_ROOT and BUNDLE with actual isolated paths. First make a new empty LAB_ROOT; do not point it at production.
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
+LAB_ROOT=/absolute/path/to/new-h3-lab
+BUNDLE=/absolute/path/to/H3-Lab-Reviewed.bundle
+mkdir -p "$LAB_ROOT"
+git clone https://github.com/Comfy-Org/ComfyUI.git "$LAB_ROOT/ComfyUI"
+cd "$LAB_ROOT/ComfyUI"
+git checkout 3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251
+git clone -b lab/main "$BUNDLE" custom_nodes/h3_studio_v2
+```
 
-# 1. Clone Lab Repository in an isolated directory
-mkdir -p /opt/h3-lab
-cd /opt/h3-lab
-git clone -b lab/main https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield-lab.git custom_nodes/minimax-h3-higgsfield-lab
+Confirm the lab checkout commit against the handoff manifest, then install only baseline dependencies missing from the authorized server environment. The source ZIP is an alternative for inspection, but the bundle preserves the review history.
 
-# 2. Install Pinned Low-Level Continuation Candidate
-cd /opt/h3-lab/custom_nodes
+## Optional masked-context engine
+
+Image/audio/video guides use native AddGuide; they do not require this addon. Extend requires the separately installed pinned engine plus the lab-owned context and trim nodes.
+
+```bash
+cd "$LAB_ROOT/ComfyUI/custom_nodes"
 git clone https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef.git
-cd ComfyUI-H3-Motion-Context-MultiRef
-git checkout 361624fb406b63eb6694442eac6c895fc1533a70
-
-# 3. Share Production Model Directory Read-Only
-# Link existing weights without duplicating 60+ GB
-mkdir -p /opt/h3-lab/models
-ln -s /opt/comfyui-production/models/unet /opt/h3-lab/models/unet
-ln -s /opt/comfyui-production/models/clip /opt/h3-lab/models/clip
-ln -s /opt/comfyui-production/models/vae /opt/h3-lab/models/vae
-ln -s /opt/comfyui-production/models/loras /opt/h3-lab/models/loras
-
-# 4. Install Lab Python Dependencies
-pip install --no-cache-dir aiohttp safetensors
-
-# 5. Launch Isolated Lab Server on Port 8189
-python main.py --listen 127.0.0.1 --port 8189 --highvram
+git -C ComfyUI-H3-Motion-Context-MultiRef checkout 361624fb406b63eb6694442eac6c895fc1533a70
 ```
 
----
+Review that checkout's requirements before installing on the server. Keep its GPL source/license in its separate repository. Do not vendor it into this MIT project, install competing extenders, or apply core patches speculatively. The lab reports missing node readiness and blocks unavailable Extend. Installing the addon does not establish seam quality or promotion approval.
 
-## 2. Model Weight Verification
+## Shared model paths
 
-Verify model headers using safetensors without loading weights into RAM:
+Create a lab-specific extra_model_paths.yaml referencing the actual existing server model folders (diffusion_models/text_encoders/vae/loras, including the baseline's actual aliases when needed). Path references and symlinks do not enforce read-only access: use server permissions or a read-only mount if needed. Never change permissions or files in production to set this up. The lab must not download or rewrite shared weights.
+
+## Start and open a second interface
+
+Use the existing compatible server interpreter and baseline launch flags, replacing only the checkout, port and data directories. Avoid the old unverified --highvram recommendation.
 
 ```bash
-python -c "
-import safetensors.torch
-files = [
-    'models/unet/minimax_h3_fl2va_pruned_int8_convrot.safetensors',
-    'models/unet/minimax_h3_ref2va_pruned_int8_convrot.safetensors',
-    'models/clip/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
-    'models/vae/minimax_h3_video_vae_fp16.safetensors',
-    'models/vae/minimax_h3_audio_vae_fp32.safetensors'
-]
-for f in files:
-    with safetensors.safe_open(f, framework='pt') as sf:
-        print(f'{f}: verified {len(sf.keys())} keys')
-"
+cd "$LAB_ROOT/ComfyUI"
+python main.py --listen 127.0.0.1 --port 8190 \
+  --input-directory "$LAB_ROOT/input" --output-directory "$LAB_ROOT/output" \
+  --extra-model-paths-config "$LAB_ROOT/extra_model_paths.yaml"
 ```
 
----
+Access port 8190 through your authorized tunnel/reverse proxy. Production H3 occupies 8188; LTX occupies 8189 and 7860. The workspace URL is `/extensions/h3_studio_v2/index.html`. Set its server URL to this lab endpoint. The queue bridge uses this process's actual listener port; use plain HTTP loopback behind the tunnel/proxy.
 
-## 3. Rollback & Deactivation Procedure
+## Editing while production runs
 
-The lab is completely decoupled from production:
-1. **Zero Overwrite**: The lab resides in a separate repository and folder. No production files are modified.
-2. **Deactivation**: Stop the ComfyUI process running on port 8189.
-3. **Data Removal (Optional)**: To completely purge lab artifacts, remove `/opt/h3-lab/custom_nodes/minimax-h3-higgsfield-lab/lab_storage/`. Production outputs under `ComfyUI/output/` are untouched.
-4. **Promotion Guard**: No changes may be merged to the production repository until another model reviews the handoff artifacts and completes live GPU smoke testing.
+The lightweight `deploy/v2_standby.py` serves the V2 editing interface, private projects and assets without importing torch or ComfyUI. Generation is blocked in both backend and UI. Only approved production status GETs are allowed; production queues and outputs are not exposed. Standby uses /output/h3-studio-v2/data/input and /output/h3-studio-v2/data/output, on loopback port 8190.
+
+Open an SSH tunnel from Windows, keeping it running:
+
+```bash
+ssh -N -L 18190:127.0.0.1:8190 -p 31747 root@ssh.hyper.ai
+```
+
+Enter the server password interactively, then open http://127.0.0.1:18190/extensions/h3_studio_v2/index.html. Models and rendering remain on the server. Do not commit credentials.
+
+`deploy/activate_v2.py` is a manual gate, not a scheduler: it refuses activation while H3/LTX queues, GPU or memory are busy. Editing standby does not establish GPU render quality.
+
+Check `/h3_studio/readiness` and `/h3_studio/lab/capabilities` first. Missing optional continuation nodes should disable Extend while available normal modes remain usable. Check the installed object_info schema before enabling timed AV guides.
+
+## GPU acceptance gates
+
+Run the live matrix in TEST_REPORT.md sequentially, within a user-specified budget. Verify completed playable files, audio, exact frame counts and actual joins. Test direct Ref2VA continuation with image references; test the video-context path separately for checkpoint changes. CPU tests are not a substitute.
+
+## Rollback
+
+Stop only the process listening on the lab port. Production files and outputs were never changed. Preserve LAB_ROOT/output, including lab_storage, h3_lab_contexts and latent recovery files, until you decide to remove the lab. Do not issue automatic recursive deletion, move data into production, or promote code before the live gates pass.

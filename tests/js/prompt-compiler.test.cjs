@@ -206,3 +206,31 @@ describe('H3 Prompt Compiler', () => {
     assert.equal(compiled.bindings.length, 2);
   });
 });
+
+
+test('native-only structured references pass and preserve subject binding', () => {
+  const source = 'subject_definitions:\n<Subject 1> is the person in <Picture 1>.\nsummary:\n<Subject 1> enters.\ndetailed_description:\n[Shot 1] <Subject 1> waves.\nretention_analysis:\n<Subject 1>: preserve appearance.\noverall_soundscape:\nRoom ambience.\nnon_diegetic_music:\nNone.';
+  const result = compilePrompt({mode:'refs', source_prompt:source, references:[{asset_id:'a', alias:'hero', kind:'image', role:'character identity'}]});
+  assert.equal(result.compiled_prompt, source);
+  assert.throws(() => compilePrompt({mode:'refs', source_prompt:source.replace('in <Picture 1>', 'with no picture'), references:[{asset_id:'a', alias:'hero', kind:'image', role:'character identity'}]}), /must be defined/);
+  assert.throws(() => compilePrompt({mode:'refs', source_prompt:source + ' @unknown', references:[{asset_id:'a', alias:'hero', kind:'image', role:'character identity'}]}), /Unknown mention/);
+});
+
+
+test('storyboard panel order comes from the prompt or explicit user instruction', () => {
+  const spec = {mode:'refs', source_prompt:'Follow @board.', references:[{asset_id:'a', alias:'board', kind:'image', role:'storyboard'}]};
+  const defaultPrompt = compilePrompt(spec).compiled_prompt;
+  assert.ok(!defaultPrompt.includes('left to right'));
+  assert.ok(defaultPrompt.includes('panel/shot order described in the prompt'));
+  spec.references[0].panel_order = 'Read bottom row before top row';
+  spec.references[0].instruction = 'Use the last panel only for costume.';
+  const explicit = compilePrompt(spec).compiled_prompt;
+  assert.ok(explicit.includes('Read bottom row before top row'));
+  assert.ok(explicit.includes('Use the last panel only for costume.'));
+});
+
+
+test('explicit structured mode and partial native payloads fail closed', () => {
+  assert.throws(() => compilePrompt({mode:'text', prompt_mode:'structured', source_prompt:'Plain prose.'}), /requires native section/);
+  assert.throws(() => compilePrompt({mode:'text', source_prompt:'integrated_multimodal_description: [Shot 1] Walk.'}), /missing native section/);
+});

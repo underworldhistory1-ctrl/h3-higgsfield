@@ -4,7 +4,7 @@ const state={
   mode:"create",refs:[],profiles:{},nodes:{},ready:false,busy:false,
   clientId:crypto.randomUUID(),socket:null,activePromptId:localStorage.getItem("qwen.activePromptId")||null,
   started:0,lastStepAt:0,lastStep:0,stepTotal:0,stepTimes:[],uploaded:[],current:null,results:[],visible:8,timer:null,
-  settings:null,abort:null,completing:false
+  settings:null,abort:null,completing:false,generationEpoch:0,inferenceEnabled:true,standbyReason:null,pendingToken:null
 };
 const profileFiles={
   int8:{unet:"qwen_image_2.1_int8_convrot.safetensors",clip:"qwen3vl_8b_int8_convrot.safetensors"},
@@ -28,7 +28,7 @@ function setProgress(label,pct,remaining=null,indeterminate=false){
   $("progressFill").style.width=Math.max(0,Math.min(100,pct||0))+"%";$("progressBar").classList.toggle("busy",indeterminate);
   $("remaining").textContent="Time remaining: "+(remaining===null?"—":fmt(remaining));
 }
-function setBusy(value){state.busy=value;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);document.querySelectorAll(".left input,.left select,.left textarea,#addReferences").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});updateSettings();}
+function setBusy(value){state.busy=value;$("generate").disabled=value||!state.ready;$("generate").classList.toggle("hidden",value);$("cancel").classList.toggle("hidden",!value);document.querySelectorAll(".left input,.left select,.left textarea,#addReferences").forEach(el=>{if(el.id!=="aspect"&&el.id!=="resolution")el.disabled=value;});updateSettings();}
 function dimensions(){return sizeMap[$("resolution").value][$("aspect").value];}
 function outputDimensions(){const first=state.refs[0];if(!first||$("customSize").checked||!first.width||!first.height)return dimensions();const scale=$("fitReferences").checked?Math.min(1,2048/Math.max(first.width,first.height)):1;return [Math.max(32,Math.round(first.width*scale/32)*32),Math.max(32,Math.round(first.height*scale/32)*32)];}
 function estimateSeconds(){
@@ -103,11 +103,12 @@ $("referenceFiles").onchange=()=>{
 async function checkConnection(){
   try{
     const response=await fetch(api("/h3_studio/image_readiness"),{cache:"no-store"});if(!response.ok)throw Error("Image extension unavailable");
-    const data=await response.json();state.profiles=data.profiles||{};state.nodes=data.nodes||{};state.ready=!!data.ready;
+    const data=await response.json();state.profiles=data.profiles||{};state.nodes=data.nodes||{};state.inferenceEnabled=data.inference_enabled!==false;state.standbyReason=state.inferenceEnabled?null:(data.reason||"Inference is disabled on this standby server.");state.ready=state.inferenceEnabled&&!!data.ready;
     for(const option of $("profile").options){option.disabled=!state.profiles[option.value]?.ready;}
     if(!state.profiles[$("profile").value]?.ready){const first=[...$("profile").options].find(option=>!option.disabled);if(first)$("profile").value=first.value;}
     const readyProfiles=Object.entries(state.profiles).filter(([,item])=>item.ready).map(([key])=>key.toUpperCase());
     const missingNodes=Object.entries(state.nodes).filter(([,ready])=>!ready).map(([name])=>name);
+    if(!state.inferenceEnabled){setConnection("down",state.standbyReason);$("profileNote").textContent=state.standbyReason;return false;}
     if(!state.ready){setConnection("down",missingNodes.length?"Missing nodes: "+missingNodes.join(", "):"Qwen weights are not installed");$("profileNote").innerHTML="<strong>Qwen Image is unavailable</strong><br>Install one complete model profile before generating.";return false;}
     setConnection("ready","Connected · "+readyProfiles.join(" + "));$("profileNote").innerHTML=$("profile").value==="bf16"?"<strong>Maximum precision</strong><br>Full BF16 weights. More model loading and memory use.":"<strong>Fast / efficient</strong><br>INT8 ConvRot reduces storage and VRAM with a possible small quality difference.";openSocket();return true;
   }catch(error){state.ready=false;setConnection("down",error.message);return false;}finally{setBusy(state.busy);updateSettings();}
@@ -126,7 +127,7 @@ function handleSocket(message){
     if(data.node===null){pollHistory(true);}else if(data.node==="save")setProgress("Saving PNG and settings",96,2);else if(data.node==="decode")setProgress("Decoding image",91,5);else if(!state.lastStepAt)setProgress("Loading Qwen Image",8,estimateSeconds(),true);
   }else if(message.type==="execution_error"&&state.busy){failGeneration(data.exception_message||"ComfyUI graph failed");}
 }
-function saveActiveJob(){if(!state.activePromptId)return;localStorage.setItem("qwen.activeJob",JSON.stringify({promptId:state.activePromptId,settings:state.settings,started:state.started,uploaded:state.uploaded,lastStep:state.lastStep,stepTotal:state.stepTotal,stepTimes:state.stepTimes.slice(-8)}));}
+function saveActiveJob(){if(!state.activePromptId)return;localStorage.setItem("qwen.activeJob",JSON.stringify({promptId:state.activePromptId,pendingToken:state.pendingToken,settings:state.settings,started:state.started,uploaded:state.uploaded,lastStep:state.lastStep,stepTotal:state.stepTotal,stepTimes:state.stepTimes.slice(-8)}));}
 async function pollImageProgress(){const id=state.activePromptId;if(!id)return;try{const response=await fetch(api("/h3_studio/job_progress?prompt_id="+encodeURIComponent(id)),{cache:"no-store"});if(!response.ok)return;const data=await response.json();if(id!==state.activePromptId||!Number.isFinite(data.step)||!Number.isFinite(data.total)||data.total<=0||data.step<state.lastStep)return;state.lastStep=data.step;state.stepTotal=data.total;state.lastStepAt=Date.now();const avg=state.stepTimes.length?state.stepTimes.reduce((a,b)=>a+b,0)/state.stepTimes.length:0;setProgress(`Sampling · ${data.step}/${data.total}`,12+Math.round(78*data.step/data.total),avg?avg*(data.total-data.step):null);saveActiveJob();}catch{}}
 
 function buildGraph(settings,uploads,token){
@@ -166,56 +167,75 @@ function captureSettings(){
   const prompt=resolveMentions(sourcePrompt);
   return {mode,profile,prompt,sourcePrompt,referenceNames:state.refs.map(ref=>ref.name),width,height,steps,seed,transparent:mode==="create"&&$("transparent").checked,referenceResolution:Number($("referenceResolution").value),customSize:mode==="edit"&&$("customSize").checked};
 }
+async function recoverPendingImage(){
+  if(!state.pendingToken)return state.activePromptId;
+  const token=state.pendingToken;
+  const matches=graph=>graph?.save?.inputs?.token===token;
+  let found=null;
+  try{const queue=await(await fetch(api('/queue'))).json();found=[...(queue.queue_running||[]),...(queue.queue_pending||[])].find(item=>matches(item[2]))?.[1];}catch{}
+  if(!found)try{const history=await(await fetch(api('/history?max_items=100'))).json();found=Object.entries(history).find(([,item])=>matches(item.prompt?.[2]))?.[0];}catch{}
+  if(found&&state.pendingToken===token){state.activePromptId=found;state.pendingToken=null;localStorage.setItem('qwen.activePromptId',found);saveActiveJob();return found;}
+  return null;
+}
+async function cancelQueuedImage(promptId){
+  if(String(promptId).startsWith('submission:'))promptId=await recoverPendingImage();
+  if(!promptId)return false;
+  const response=await fetch(api('/queue'));if(!response.ok)return false;
+  const queue=await response.json();
+  if((queue.queue_running||[]).some(item=>item[1]===promptId))return false;
+  if(!(queue.queue_pending||[]).some(item=>item[1]===promptId))return false;
+  const deleted=await fetch(api('/queue'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delete:[promptId]})});if(!deleted.ok)return false;
+  const verified=await fetch(api('/queue'));if(!verified.ok)return false;
+  const after=await verified.json();return ![...(after.queue_running||[]),...(after.queue_pending||[])].some(item=>item[1]===promptId);
+}
 async function generate(){
-  showError("");let settings;try{settings=captureSettings();if(!await checkConnection())throw Error("Qwen Image is not ready on this server.");}catch(error){showError(error.message);return;}
+  if(state.busy)return;
+  const promptEpoch=++state.generationEpoch;
+  showError("");let settings;try{if(!await checkConnection())throw Error(state.standbyReason||"Qwen Image is not ready on this server.");if(promptEpoch!==state.generationEpoch||state.busy)return;settings=captureSettings();}catch(error){showError(error.message);return;}
   state.settings=settings;state.abort=new AbortController();state.uploaded=[];state.started=Date.now();state.lastStepAt=0;state.lastStep=0;state.stepTotal=0;state.stepTimes=[];setBusy(true);setProgress("Preparing inputs",2,estimateSeconds(),true);showStage("Generating your image","The first run can include model loading.");
+  let submitted=false,submissionSettled=false;
   try{
     if(settings.mode==="edit")for(let i=0;i<state.refs.length;i++){const name=await uploadOne(state.refs[i].file,i);state.uploaded.push(name);}
-    const promptEpoch=++state.generationEpoch;
+    if(promptEpoch!==state.generationEpoch||state.abort.signal.aborted)throw new DOMException("Cancelled","AbortError");
+    const token=crypto.randomUUID().replace(/-/g,"").slice(0,12);
+    const prompt=buildGraph(settings,state.uploaded,token);
+    state.pendingToken=token;state.activePromptId="submission:"+token;localStorage.setItem("qwen.activePromptId",state.activePromptId);saveActiveJob();submitted=true;
     const response=await fetch(api("/prompt"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,client_id:state.clientId})});
     const data=await response.json();
-    if(!response.ok||!data.prompt_id)throw Error(nodeError(data));
+    if(!response.ok||!data.prompt_id){submissionSettled=!response.ok&&response.status<500;if(submissionSettled){state.activePromptId=null;state.pendingToken=null;}throw Error(nodeError(data));}
+    submissionSettled=true;state.pendingToken=null;
     state.activePromptId=data.prompt_id;localStorage.setItem("qwen.activePromptId",data.prompt_id);saveActiveJob();
     if(promptEpoch!==state.generationEpoch){
       let confirmed=false;
-      try{
-        const queue=await (await fetch(api("/queue"))).json();
-        const running=(queue.queue_running||[]).some(item=>item[1]===data.prompt_id);
-        const res=await fetch(api(running?"/interrupt":"/queue"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(running?{}:{delete:[data.prompt_id]})});
-        confirmed=res.ok;
-      }catch{}
+      try{confirmed=await cancelQueuedImage(data.prompt_id);}catch{}
       if(!confirmed){
         setProgress("Cancellation unconfirmed · job tracked",0,null,true);
-        throw Error("Cancellation could not be confirmed on the server. The job remains tracked; check the queue before retrying.");
+        throw Error("Cancellation could not be confirmed on the server. The job remains tracked. This version can remove queued images but cannot safely interrupt a running image.");
       }
       throw Error("Cancelled");
     }
     setProgress("Queued or loading Qwen Image",8,estimateSeconds(),true);pollQueue();pollHistory(false);
-  }catch(error){if(state.activePromptId&&error.message!=="Cancelled"){setBusy(true);showError(error.message);return;}if(error.name==="AbortError"||error.message==="Cancelled"){await finishFailure("Cancelled",true);}else await finishFailure(error.message,false);}
+  }catch(error){if(submitted&&!submissionSettled){setBusy(true);showError("Submission acknowledgement was lost. The image may still run. Inputs are retained; this workspace will look for its saved token in queue/history. Do not retry yet.");pollQueue();pollHistory(false);return;}if(state.activePromptId&&error.message!=="Cancelled"){setBusy(true);showError(error.message);return;}if(error.name==="AbortError"||error.message==="Cancelled"){await finishFailure("Cancelled",true);}else await finishFailure(error.message,false);}
 }
 function nodeError(data){const errors=[];if(data.error?.message)errors.push(data.error.message);for(const [id,node] of Object.entries(data.node_errors||{}))for(const error of node.errors||[])errors.push(`${id}: ${error.message||""} ${error.details||""}`.trim());return (errors.join(" · ")||"ComfyUI rejected the image graph").slice(0,700);}
-async function finishFailure(message,cancelled){state.activePromptId=null;state.completing=false;localStorage.removeItem("qwen.activePromptId");localStorage.removeItem("qwen.activeJob");await cleanupUploads();setBusy(false);setProgress(cancelled?"Cancelled":"Generation failed",0,null);showStage(cancelled?"Generation cancelled":"Generation failed",cancelled?"Your prompt and references are still here.":message);if(!cancelled)showError(message);}
+async function finishFailure(message,cancelled){state.activePromptId=null;state.pendingToken=null;state.completing=false;localStorage.removeItem("qwen.activePromptId");localStorage.removeItem("qwen.activeJob");await cleanupUploads();setBusy(false);setProgress(cancelled?"Cancelled":"Generation failed",0,null);showStage(cancelled?"Generation cancelled":"Generation failed",cancelled?"Your prompt and references are still here.":message);if(!cancelled)showError(message);}
 function failGeneration(message){finishFailure(message,false);}
 $("generate").onclick=generate;
 $("cancel").onclick=async()=>{
   ++state.generationEpoch;
   state.abort?.abort();const id=state.activePromptId;
   if(id){
-    try{
-      const queue=await (await fetch(api("/queue"))).json();
-      const running=(queue.queue_running||[]).some(item=>item[1]===id);
-      const res=await fetch(api(running?"/interrupt":"/queue"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(running?{}:{delete:[id]})});
-      if(!res.ok){showError("Could not confirm cancellation (server returned error). The job remains tracked.");return;}
-    }catch{showError("Could not confirm cancellation. The job remains tracked.");return;}
+    try{if(!await cancelQueuedImage(id)){showError("Cancellation is unconfirmed. This version can remove queued images but cannot safely interrupt a running image. The job and inputs remain tracked.");setBusy(true);return;}}
+    catch{showError("Could not confirm cancellation. The job and inputs remain tracked.");setBusy(true);return;}
   }
   await finishFailure("Cancelled",true);
 };
 async function pollQueue(){
-  if(!state.busy)return;try{const data=await (await fetch(api("/queue"),{cache:"no-store"})).json();const running=data.queue_running||[],pending=data.queue_pending||[];const position=pending.findIndex(item=>item[1]===state.activePromptId);$("queueInfo").textContent=running.some(item=>item[1]===state.activePromptId)?`Queue: rendering now · ${pending.length} waiting`:position>=0?`Queue: position ${position+1} · ${pending.length} waiting`:`Queue: ${running.length} active · ${pending.length} waiting`;if(running.some(item=>item[1]===state.activePromptId))await pollImageProgress();}catch{}setTimeout(pollQueue,2500);
+  if(!state.busy)return;if(state.pendingToken)await recoverPendingImage();try{const data=await (await fetch(api("/queue"),{cache:"no-store"})).json();const running=data.queue_running||[],pending=data.queue_pending||[];const position=pending.findIndex(item=>item[1]===state.activePromptId);$("queueInfo").textContent=running.some(item=>item[1]===state.activePromptId)?`Queue: rendering now · ${pending.length} waiting`:position>=0?`Queue: position ${position+1} · ${pending.length} waiting`:`Queue: ${running.length} active · ${pending.length} waiting`;if(running.some(item=>item[1]===state.activePromptId))await pollImageProgress();}catch{}setTimeout(pollQueue,2500);
 }
 function findOutput(history){for(const output of Object.values(history?.outputs||{})){for(const image of output.images||[]){if(/^qwen_studio_[A-Za-z0-9_-]+_[0-9]{5}\.png$/.test(image.filename||""))return image;}}return null;}
 async function pollHistory(force=false){
-  if(!state.activePromptId)return;try{const response=await fetch(api("/history/"+encodeURIComponent(state.activePromptId)),{cache:"no-store"});const all=await response.json();const history=all[state.activePromptId];if(history){const file=findOutput(history);if(file){await completeGeneration(file);return;}const status=history.status||{};if(status.status_str==="error"||status.completed===false)throw Error("The image graph failed. Check the ComfyUI error details.");}}catch(error){if(force){await finishFailure(error.message,false);return;}}setTimeout(()=>pollHistory(false),2000);
+  if(!state.activePromptId)return;if(state.pendingToken&&!await recoverPendingImage()){setTimeout(()=>pollHistory(false),2000);return;}try{const response=await fetch(api("/history/"+encodeURIComponent(state.activePromptId)),{cache:"no-store"});const all=await response.json();const history=all[state.activePromptId];if(history){const file=findOutput(history);if(file){await completeGeneration(file);return;}const status=history.status||{};if(status.status_str==="error"||status.completed===false)throw Error("The image graph failed. Check the ComfyUI error details.");}}catch(error){if(force){await finishFailure(error.message,false);return;}}setTimeout(()=>pollHistory(false),2000);
 }
 async function completeGeneration(file){
   if(state.completing)return;state.completing=true;
@@ -239,7 +259,7 @@ $("download").onclick=()=>{if(!state.current)return;const a=document.createEleme
 async function deleteEntry(entry){if(!entry||!confirm("Delete this generated image from the server? This cannot be undone."))return;try{const response=await fetch(api("/h3_studio/delete_image"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:entry.filename})});if(!response.ok)throw Error();if(state.current?.filename===entry.filename){state.current=null;$("currentActions").classList.add("hidden");showStage("Image deleted","Generate another image or select one from the library.");}state.results=state.results.filter(item=>item.filename!==entry.filename);renderLibrary();showError("");await loadLibrary(false);}catch{showError("The image could not be deleted. Retry after reconnecting.");}}
 if($("sendToH3")) $("sendToH3").onclick = async () => {
   if(!state.current) return;
-  const role = confirm("Send this image to H3 as a START FRAME?\n(Click OK for Start Frame, Cancel for Reference)") ? "start_frame" : "reference";
+  const role = $("h3HandoffRole")?.value || "reference";
   try {
     const res = await fetch(api("/h3_studio/lab/import_qwen_image"), {
       method: "POST",
@@ -266,5 +286,5 @@ $("randomSeed").onclick=()=>{$("seed").value=Math.floor(Math.random()*2**48);sav
 for(const id of ["prompt","aspect","resolution","steps","seed","transparent","referenceResolution","customSize","fitReferences"]){$(id).addEventListener("input",()=>{updateSettings();saveDraft();if(id==="prompt")renderMentions();});}
 window.addEventListener("focus",()=>loadLibrary(false));
 state.timer=setInterval(()=>{if(state.busy&&state.started){const elapsed=(Date.now()-state.started)/1000;$("timer").textContent="Elapsed: "+fmt(elapsed);if(!state.lastStepAt)$("remaining").textContent="Time remaining: "+fmt(Math.max(0,estimateSeconds()-elapsed));}},1000);
-async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(localStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];state.lastStep=Number(job.lastStep)||0;state.stepTotal=Number(job.stepTotal)||0;state.stepTimes=Array.isArray(job.stepTimes)?job.stepTimes:[];}else{state.started=Date.now();}state.busy=true;setBusy(true);setProgress("Restoring active generation",5,null,true);if(state.lastStep&&state.stepTotal)setProgress(`Sampling · ${state.lastStep}/${state.stepTotal}`,12+Math.round(78*state.lastStep/state.stepTotal),null);openSocket();pollQueue();pollHistory(false);}
+async function resume(){if(!state.activePromptId)return;let job={};try{job=JSON.parse(localStorage.getItem("qwen.activeJob")||"{}");}catch{}if(job.promptId===state.activePromptId){state.settings=job.settings||null;state.pendingToken=job.pendingToken||null;state.started=Number(job.started)||Date.now();state.uploaded=Array.isArray(job.uploaded)?job.uploaded:[];state.lastStep=Number(job.lastStep)||0;state.stepTotal=Number(job.stepTotal)||0;state.stepTimes=Array.isArray(job.stepTimes)?job.stepTimes:[];}else{state.started=Date.now();}state.busy=true;setBusy(true);setProgress("Restoring active generation",5,null,true);if(state.lastStep&&state.stepTotal)setProgress(`Sampling · ${state.lastStep}/${state.stepTotal}`,12+Math.round(78*state.lastStep/state.stepTotal),null);openSocket();pollQueue();pollHistory(false);}
 restoreDraft();renderRefs();updateSettings();loadLibrary(false);checkConnection().then(resume);

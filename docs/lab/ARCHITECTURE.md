@@ -1,114 +1,43 @@
-# H3 Studio Lab — Architecture Specification
+# Reviewed lab data flow
 
-## Overview
+## Working interfaces
 
-The H3 Studio Lab (`minimax-h3-higgsfield-lab`) extends the production MiniMax H3 video generation workflow with:
-1. **Neutral Custom Reference Controls** and deterministic prompt compilation.
-2. **Native Temporal Guides** via `MiniMaxH3AddGuide`.
-3. **Durable Server Projects and Takes** with optimistic concurrency (`revision` check) and lease-protected asset ownership.
-4. **AV Latent Continuation** with exact frame/sample timing (17k+5 frames, 51k+39 context length, 40Hz audio latents).
-5. **Decoupled Sequence Assembly** using FFmpeg single-pass AAC muxing without cumulative audio delays.
-6. **Zero-Download Qwen-to-H3 Handoff** for start frames and references.
+studio.js owns the visible workspace; lab-ui.js owns project hydration, guide controls and review actions. web/h3 modules compile prompts and deterministic raw Comfy graphs, and expose the project API client. Saved assets restore as real media objects, never fake File placeholders.
 
-All changes are strictly isolated from production: namespaced under `/h3_studio/lab/*` routes, using server-namespaced storage keys, and keeping production repositories/servers untouched.
+Reference slots use native image → video/paired soundtrack → standalone audio order. Aliases remain stable through reordering; Custom maps to neutral native media tags. Structured mode validates native sections and connected indices, passing a valid payload through exactly once. Storyboard is a visual shot sheet with explicit user panel/shot order; it is not a scheduler or automatic panel-to-keyframe converter.
 
----
+Frames and image guides can crop or contain with visible canvas fitting. Image references can preserve proportions, crop or contain. Durable originals remain unchanged; render inputs are separate. Native Max reference detail caps the short edge at 2048 and never upscales; the upload's long-edge cap is a different limit.
 
-## Data Flow & Architecture
+Native AddGuide supports an image, video frame batch, audio, or paired AV. Runtime object_info gates the advanced options. Video guide batches crop to the native 5+17k grid; the UI/builder validate effective spans. Source trims, 24 fps normalization and paired audio use one input timeline. New-content guide times add the context offset when extending.
 
-```mermaid
-graph TD
-    UI[Browser Studio UI] -->|Prompt, References, Canvas| PC[Prompt Compiler]
-    PC -->|Compiled Prompt, Media Bindings| GB[Graph Builder]
-    UI -->|Asset & Project Management| PS[Project & Asset Services]
-    GB -->|Deterministic ComfyUI Graph| JS[Job Service]
-    JS -->|Atomic Submission & Leases| ComfyUI[ComfyUI Server /queue]
-    ComfyUI -->|Sampled AV Latent| CS[Context Service]
-    CS -->|Safetensors Context| Extend[Continuation Adapter]
-    ComfyUI -->|Rendered Takes| TakeStore[Takes & Manifest]
-    TakeStore -->|Accepted Take IDs| Assembly[FFmpeg Sequence Assembly]
-    Assembly -->|Final Master MP4| Export[Export Bundle / Sequence]
-```
+## Durable server state
 
----
+Canonical roots are injected explicitly: Comfy output, Comfy input, and output/lab_storage. Projects use atomic manifests and required optimistic revision checks. Assets live under lab_storage/assets. Asset upload attaches ownership and changes the project revision; the UI refreshes the server project after uploading before saving its draft.
 
-## Canonical Data Contracts
+A draft records source prompts by mode, aliases/roles, original asset IDs, frame fitting, guide timing, canvas, sampling settings, LoRAs and continuation source. Takes record the actual effective settings, immutable draft, output path, clip identity, parent take, unique frames and creation state. Acceptance is explicit. Replacing a take for a clip invalidates accepted descendants without deleting historical takes.
 
-### 1. Project Manifest (`schema_version: 1`)
-Stored atomically under `<storage_root>/projects/<project_id>/manifest.json`:
-```json
-{
-  "schema_version": 1,
-  "project_id": "8f3b2a1c-...",
-  "name": "Project Name",
-  "revision": 2,
-  "created_at": 1727913600.0,
-  "updated_at": 1727914000.0,
-  "fps": 24,
-  "canvas": {"width": 1280, "height": 704},
-  "assets": [
-    {
-      "asset_id": "asset_4a1b...",
-      "kind": "image",
-      "path": "assets/asset_4a1b...png",
-      "original_name": "character.png",
-      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size": 1048576,
-      "metadata": {"width": 1280, "height": 704}
-    }
-  ],
-  "clips": [
-    {
-      "clip_id": "clip_01",
-      "prompt": "A character walking in a neon street.",
-      "prompt_mode": "guided",
-      "references": [{"asset_id": "asset_4a1b...", "alias": "hero", "kind": "image", "role": "custom"}]
-    }
-  ],
-  "takes": [
-    {
-      "take_id": "take_99f2...",
-      "clip_id": "clip_01",
-      "output_file": "video/h3_studio_99f2...mp4",
-      "effective_settings": {"frames": 175, "steps": 20, "seed": 42},
-      "created_at": 1727913800.0,
-      "status": "completed"
-    }
-  ],
-  "accepted_take_ids": ["take_99f2..."],
-  "exports": []
-}
-```
+Imported bundles remap asset/context IDs and preserve source media. Imported take media lives under lab_storage/imported_takes/<project>; Comfy view paths and media actions use its canonical output path. Missing referenced payloads fail export/import instead of claiming a complete bundle. Filesystem operations reject absolute/traversal/symlink escapes and restrict take media to managed H3 MP4 outputs.
 
-### 2. Job Record & Asset Leases
-Before submitting to ComfyUI, the job service persists:
-- `job_id`: Unique server-assigned identifier.
-- `request_id`: Client-supplied idempotency key (prevents duplicate submission).
-- `asset_leases`: List of `asset_id` or filename leases. Any asset with an active lease is protected from garbage collection, stale sweeping, and cleanup.
-- `state`: Distinct states: `draft`, `validating`, `uploading`, `queued`, `loading`, `sampling`, `decoding`, `saving`, `completed`, `cancel_requested`, `cancelled`, `failed`, `unknown`.
+## Queue ownership and recovery
 
-### 3. Continuation Context Specification
-Saved as non-pickle `safetensors` with embedded JSON metadata:
-- Video Latent Shape: `[1, 16, T_latent, H_latent, W_latent]`
-- Audio Latent Shape: `[1, C_audio, T_audio_latent]` (40Hz sampling)
-- Fingerprint: Hash of `{model, vae, canvas, fps, frame_count, producer_take_id}`
-- Invariant: A context is loaded only when fingerprint and shapes match. Mismatched shapes trigger an actionable error rather than blind tensor padding.
+Before POST /lab/jobs, the browser saves the request ID and exact submission body. The server saves the request hash, graph/specification, ownership and leases before queuing. Duplicate requests do not queue twice. A definite rejection terminates the job; a lost acknowledgement stays unknown and retains leases.
 
----
+The HTTP bridge calls only this process's loopback listener. GET jobs/by_request resolves a lost browser response; identical replay is safe when no server record exists. Request cancellation can reserve a durable cancellation tombstone before a late submission arrives. Cancellation intent survives acknowledgement races. Input deletion primitives respect active ownership.
 
-## Media & Timing Invariants
+Running interruption is permitted only when this ComfyUI implementation supports a targeted prompt ID; older global-only versions refuse and keep tracking. Queue removal, cancellation request and confirmed terminal cancellation are different states. CPU tests simulate queue and network boundaries; actual GPU stop behavior remains a live gate.
 
-1. **Native Video Frame Grid**: `5 + 17 * k`
-   - Common lengths: 124, 141, 158, 175, 192, ..., 362 frames.
-2. **Context Overlap Grid**: `39 + 51 * k`
-   - Default overlap: 39 frames (1.625s at 24 fps).
-   - Audio latent ticks for 39 frames: `round(1.625 * 40) = 65` ticks.
-   - Feathering window: 8 audio ticks.
-3. **Exact Sequence Continuity**:
-   - Initial Clip: 175 frames (7.292s)
-   - Extension 1: 175 target window - 39 context = +136 unique frames
-   - Extension 2: 175 target window - 39 context = +136 unique frames
-   - Total Sequence: `175 + 136 + 136 = 447 frames` (18.625s).
-4. **AAC Delay Protection**:
-   - Canonical PCM audio streams are trimmed at absolute sample boundaries (`sample_rate * frames / 24`).
-   - Sequence concatenation occurs at raw PCM level, followed by a single AAC encode in FFmpeg to prevent compound priming delays.
+## Context and continuation
+
+H3ReleaseForDecode keeps the ordinary temporary decode-recovery checkpoint and creates a separate durable safetensors context under output/h3_lab_contexts/<12-hex-token>. It preserves tensor dtypes, records shapes/hash, canvas/FPS and loader/LoRA/accelerator/file identities. H3LabLoadContext checks integrity and genuine two-stream H3 AV shapes before restoring a NestedTensor. Direct context reuse requires matching checkpoint/configuration and canvas.
+
+A second path imports an owned video into a permanent server asset and re-encodes its AV context through the external ExistingVideoMaskedContext node. This is an advanced GPU experiment, not proof that FL2VA and Ref2VA sampler latents are interchangeable. Source dimensions and 24 fps must match; current server import is bounded to 40–362 frames and 500 MB.
+
+The masked context nodes stay in the separately installed pinned external engine. This repository supplies H3LabLoadContext and H3LabTrimAV. The sampler retains the full continuation window for future context. After decode, H3LabTrimAV removes overlap from both images and PCM before CreateVideo, saving only unique new content. At 24 fps: target175−context39=136 new frames; 175+136+136=447 unique frames=18.625 seconds.
+
+Accepted clips declare overlap_frames explicitly. Newly saved trimmed extensions use0. FFmpeg checks compatible canvases/24 fps, removes any explicitly declared legacy overlap, aligns decoded audio, concatenates and encodes AAC once. It verifies actual frames, audio and decode before atomic output promotion. AAC input files cannot restore lost original PCM precision; no perceptual seam guarantee is claimed.
+
+Context usage/purge targets the runtime directory and protects accepted lineage and active/uncertain queue references. Purging context must never delete its video.
+
+## Evidence boundary
+
+Actual CPU browser, HTTP/service, safetensors and FFmpeg checks are in TEST_REPORT.md. There has been no H3 weight loading, local CUDA inference, remote deployment, or live model quality approval. Optional Upscaler/AudioRefine remain investigations, with no visible nonfunctional controls.

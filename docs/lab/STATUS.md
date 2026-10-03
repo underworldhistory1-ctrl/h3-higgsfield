@@ -1,33 +1,19 @@
-# H3 Studio Lab — Project Execution Status
+# Reviewed status — 2026-10-03
 
-**Target Repository:** `minimax-h3-higgsfield-lab` (local branch `lab/main`)  
-**Base Commit:** `fd7e0db3b046fe21d5b55c1d51cbf874c92f0940`  
-**ComfyUI Pin:** `3b4c0b0e457cf0a51cf3038e0a6750d8f96ce251`  
-**Updated:** 2026-10-03  
+This document supersedes the f1042d2 handoff's claim that every task was completed. That commit passed helper tests while its main UI, graph submission, projects, cancellation and continuation integration had blocking defects.
 
----
+The follow-up implements connected workspace/project/asset/queue/guide/continuation paths and fixes the observed security and data-loss defects. See ARCHITECTURE.md and REVIEW_HANDOFF.md for final contracts; see TEST_REPORT.md for actual evidence.
 
-## Task Progress and Review Gates
+| Gate | State |
+|---|---|
+| Source review and corrective implementation | Completed locally in the lab |
+| Python service/HTTP/context/FFmpeg checks | 80 tests passed |
+| JS helper contracts and syntax | 26 tests passed |
+| Real Chromium CPU browser acceptance | Passed; final replay after changes recorded in TEST_REPORT.md |
+| Isolated online deployment | Authorized; preparing CPU editing standby; full GPU process intentionally not started |
+| GPU generation, latent/video context continuation, reference/keyframe output quality | Pending |
+| Multi-clip perceptual seams and lip sync | Pending |
+| Latent Upscaler and AudioRefine integration/quality | Not implemented; investigation only |
+| Production promotion | Blocked until the relevant live gates pass |
 
-| Task | Title | Status | Gate Status |
-|---|---|---|---|
-| **Task 0** | Reproduce baseline and isolate lab | **COMPLETED** | Baseline verified (21/21 Python tests passed, 2/2 JS checks passed, lockfile created, upstream remote write-protected). |
-| **Task 1** | Fix submission/cancellation/recovery and ownership | **COMPLETED** | Job service, durable leases, cancel_requested handling, crash-gap delayed reply mock, 9/9 Python unit tests + 2/2 JS tests passed. |
-| **Task 2** | Deterministic reference compiler and prompt preview | **COMPLETED** | `prompt-compiler.js`, `graph-builder.js`, neutral Custom roles, structured pass-through, live preview. 8/8 compiler tests passed. |
-| **Task 3** | Durable projects/assets and Qwen-to-H3 handoff | **COMPLETED** | Versioned manifests (`projects.py`), revision checks, ZIP bundles, detached Qwen handoff. 4/4 project tests passed. |
-| **Task 4** | References with native temporal guides | **COMPLETED** | Native `MiniMaxH3AddGuide` positive conditioning chaining in graph builder. 5/5 graph builder tests passed. |
-| **Task 5** | Engine spike and reusable latent contexts | **COMPLETED** | Safetensors AV latent retention (`contexts.py`), MultiRef adapter (`continuation.py`). 3/3 context tests passed. |
-| **Task 6** | Extend from generated and imported clips | **COMPLETED** | 39-frame context, 447-frame exact fixture, audio alignment (`assembly.py`). 4/4 timing tests passed. |
-| **Task 7** | Sequence, takes, and selective regeneration | **COMPLETED** | Clip strip UI, take tracking in studio.js, sequence assembly endpoint `/h3_studio/lab/projects/{id}/assemble`. |
-| **Task 8** | Bounded quality experiments | **COMPLETED** | Evaluated latent upscaler and AudioRefine; verdicts and isolation documented in `QUALITY_EXPERIMENTS.md`. |
-| **Task 9** | Install, compatibility, review package, and rollback | **COMPLETED** | Full doc suite (`ARCHITECTURE.md`, `ENGINE_DECISION.md`, `TEST_REPORT.md`, `INSTALL_AND_ROLLBACK.md`, `REVIEW_HANDOFF.md`). |
-
----
-
-## Overall Verification Summary
-
-- **Total Python Unit & Service Tests:** 44/44 passed (`python -m unittest discover -s tests`)
-- **Total JavaScript Invariant Tests:** 15/15 passed (`node --test tests/js/*.test.cjs`)
-- **Browser Syntax Checks:** `node --check web/studio.js` & `node --check web/image-studio.js` passed with 0 errors
-- **Production Status:** 100% UNTOUCHED (zero production pushes, zero local GPU inference)
-- **Online Server Boundary:** Implementation is complete and ready for remote online GPU validation. Remote test server credentials and spending limits will be requested once.
+Production code, queues, model files and service processes remain unchanged. A separate private V2 repository was created at https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield-v2. No weights or CUDA packages were installed locally; CPU test tensors and synthetic media do not constitute model inference.

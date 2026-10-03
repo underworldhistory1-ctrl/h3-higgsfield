@@ -40,6 +40,7 @@
     if (references.length > 12) {
       throw new Error('H3 accepts at most 12 reference files.');
     }
+    if (references.some(r => !['image', 'video', 'audio'].includes(r.kind))) throw new Error('Unknown reference kind.');
     const images = references.filter(r => r.kind === 'image');
     if (images.length > 9) {
       throw new Error('H3 accepts at most 9 reference images.');
@@ -91,6 +92,21 @@
     return [...images, ...videos, ...audios];
   }
 
+  function validateSubjectBindings(prompt, sections = parseStructuredSections(prompt), bindings = []) {
+    const used = [...prompt.matchAll(/<Subject\s+(\d+)>/gi)].map(match => Number(match[1]));
+    const definitions = sections?.subject_definitions || '';
+    const imageCount = bindings.filter(binding => binding.kind === 'image').length;
+    for (const index of new Set(used)) {
+      const lines = definitions.split(/\n/).filter(line => new RegExp(`<Subject\\s+${index}>`, 'i').test(line));
+      const pictures = lines.flatMap(line => [...line.matchAll(/<Picture\s+(\d+)>/gi)].map(match => Number(match[1])));
+      if (index < 1 || !pictures.length || pictures.some(picture => picture < 1 || picture > imageCount)) {
+        throw new Error(`Subject ${index} must be defined with a connected Picture in subject_definitions.`);
+      }
+      const bound = bindings.find(binding => binding.subject_idx === index);
+      if (bound && !pictures.includes(bound.picture_idx)) throw new Error(`Subject ${index} definition conflicts with its attached image binding.`);
+    }
+  }
+
   function compilePrompt(spec) {
     const mode = spec.mode || 'text';
     const promptMode = spec.prompt_mode || 'guided';
@@ -99,6 +115,17 @@
 
     if (!source) {
       throw new Error('Write the scene prompt first.');
+    }
+
+    const originalSections = parseStructuredSections(source);
+    const expectedSections = mode === 'refs' ? NATIVE_REF_SECTIONS : NATIVE_TEXT_SECTIONS;
+    const hasNativeSections = originalSections && Object.keys(originalSections).some(name => [...NATIVE_REF_SECTIONS, ...NATIVE_TEXT_SECTIONS].includes(name));
+    if (promptMode === 'structured' || hasNativeSections) {
+      if (!originalSections) throw new Error('Structured prompt requires native section headers.');
+      const missing = expectedSections.filter(name => !originalSections[name]);
+      if (missing.length) throw new Error('Structured prompt is missing native section(s): ' + missing.join(', '));
+      const unknown = Object.keys(originalSections).filter(name => !expectedSections.includes(name));
+      if (unknown.length) throw new Error('Unknown structured section(s): ' + unknown.join(', '));
     }
 
     // --- FRAMES MODE ---
@@ -212,7 +239,7 @@
           } else if (role === 'storyboard') {
             tag = picTag;
             bindingInfo.tag = tag;
-            mediaNotes.push(`${picTag} is a multi-panel storyboard. Read panels left to right, top to bottom as a shot and composition guide; do not render panel borders or labels. Follow explicit shot descriptions when they differ.`);
+            mediaNotes.push(`${picTag} is a multi-panel storyboard. ${ref.panel_order || "Use the panel/shot order described in the prompt"} as a shot and composition guide; do not render panel borders or labels. Follow explicit shot descriptions when they differ. ${ref.instruction || ""}`);
             retention.push(`${picTag}: attribute_transfer - guide shot order, framing and visual progression; do not treat the sheet as a single visible subject.`);
           } else {
             const subNum = ++subjectIdx;
@@ -264,14 +291,17 @@
         bindings.push(bindingInfo);
       }
 
-      // Check for unmentioned attached references
-      const missing = ordered.filter(ref => {
-        const pattern = new RegExp('@' + ref.alias + '(?=$|[^\\p{L}\\p{N}_-])', 'u');
-        return !pattern.test(source);
+      // Native structured tags are valid reference mentions as well as aliases.
+      const nativeSections = parseStructuredSections(source);
+      const missing = bindings.filter(binding => {
+        const pattern = new RegExp('@' + binding.alias + '(?=$|[^\\p{L}\\p{N}_-])', 'u');
+        if (pattern.test(source)) return false;
+        if (!nativeSections) return true;
+        const tags = [binding.tag];
+        if (binding.picture_idx) tags.push(`<Picture ${binding.picture_idx}>`);
+        return !tags.some(tag => source.includes(tag));
       });
-      if (missing.length) {
-        throw new Error('Mention every attached reference in the prompt: ' + missing.map(r => '@' + r.alias).join(', '));
-      }
+      if (missing.length) throw new Error('Mention every attached reference in the prompt: ' + missing.map(r => '@' + r.alias).join(', '));
 
       // Substitute mentions
       const unknown = [];
@@ -289,6 +319,7 @@
       // Check if prompt is already structured or user chose structured mode
       const structured = parseStructuredSections(substituted);
       if (structured) {
+        validateSubjectBindings(substituted, structured, bindings);
         // Validate native token indices in structured prompt
         const picTokens = [...substituted.matchAll(/<Picture\s+(\d+)>/gi)];
         for (const m of picTokens) {
@@ -351,5 +382,6 @@
     parseStructuredSections,
     orderedReferences,
     validateLimits,
+    validateSubjectBindings,
   };
 });

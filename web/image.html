@@ -26,7 +26,7 @@
 </head>
 <body>
 <header class="top">
- <div class="brand"><div class="mark">H3</div><div class="brand-name">H3 Higgsfield</div></div>
+ <div class="brand"><div class="mark">H3</div><div class="brand-name">H3 Higgsfield · V2</div></div>
  <nav class="topnav" aria-label="Studio workspace"><a href="index.html">Create Video</a><a class="active" href="image.html">Create Image</a></nav>
  <div class="connection" id="connection"><i class="dot"></i><span id="connectionText">Checking ComfyUI</span><button id="retry" class="button alt small">Retry</button></div>
 </header>
@@ -70,7 +70,7 @@
   <div class="stage-top"><h2>Image workspace</h2><span>Prompt · references · download</span></div>
   <div id="stage" class="stage"><div class="stage-empty"><b>Your image will appear here</b>Write a prompt, add references if needed, then generate.</div></div>
   <div class="output"><div class="statusline"><span id="status">Connect ComfyUI to begin</span><span id="percent">—</span></div><div id="progressBar" class="progress"><i id="progressFill"></i></div><div class="statusline"><span id="timer">—</span><span id="remaining">Time remaining: —</span></div><div id="queueInfo" class="tip">Queue: —</div></div>
-  <div id="currentActions" class="output hidden"><strong>Current image</strong><div class="secondary"><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><button id="sendToH3" class="button alt" style="border-color:var(--acid);color:var(--acid)">Send to H3 Video</button><button id="deleteCurrent" class="button alt">Delete</button></div></div>
+  <div id="currentActions" class="output hidden"><strong>Current image</strong><div class="secondary"><button id="details" class="button alt">Settings</button><button id="download" class="button">Download</button><select id="h3HandoffRole" aria-label="H3 destination"><option value="reference">H3 reference</option><option value="start_frame">H3 start frame</option><option value="end_frame">H3 end frame</option></select><button id="sendToH3" class="button alt" style="border-color:var(--acid);color:var(--acid)">Send to H3 Video</button><button id="deleteCurrent" class="button alt">Delete</button></div></div>
   <div class="history-head"><h2>Generated images <span id="imageCount" class="tip"></span></h2><button id="refreshLibrary" class="button alt small">Refresh</button></div>
   <div id="results" class="results"></div><button id="showMore" type="button" class="button alt hidden" style="display:block;margin:14px auto">Show more</button><div id="emptyHistory" class="empty">Your generated images will appear here.</div>
  </section>
