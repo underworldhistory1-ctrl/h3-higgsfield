@@ -234,3 +234,12 @@ test('explicit structured mode and partial native payloads fail closed', () => {
   assert.throws(() => compilePrompt({mode:'text', prompt_mode:'structured', source_prompt:'Plain prose.'}), /requires native section/);
   assert.throws(() => compilePrompt({mode:'text', source_prompt:'integrated_multimodal_description: [Shot 1] Walk.'}), /missing native section/);
 });
+
+
+test('guided prose headings do not bypass automatic subject definitions', () => {
+  const result = compilePrompt({mode:'refs', prompt_mode:'guided', source_prompt:'Action:\n@2 fights @3 following @1.', references:[{alias:'1',kind:'image',role:'storyboard'},{alias:'2',kind:'image',role:'character identity'},{alias:'3',kind:'image',role:'character identity'}]});
+  assert.match(result.compiled_prompt, /<Subject 1> is the character identity shown in <Picture 2>/);
+  assert.match(result.compiled_prompt, /<Subject 2> is the character identity shown in <Picture 3>/);
+  assert.match(result.compiled_prompt, /Action:\n<Subject 1> fights <Subject 2> following <Picture 1>/);
+  assert.equal((result.compiled_prompt.match(/^subject_definitions:/gm)||[]).length,1);
+});

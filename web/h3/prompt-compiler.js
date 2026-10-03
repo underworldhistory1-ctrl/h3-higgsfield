@@ -318,7 +318,7 @@
 
       // Check if prompt is already structured or user chose structured mode
       const structured = parseStructuredSections(substituted);
-      if (structured) {
+      if (structured && (promptMode === 'structured' || hasNativeSections)) {
         validateSubjectBindings(substituted, structured, bindings);
         // Validate native token indices in structured prompt
         const picTokens = [...substituted.matchAll(/<Picture\s+(\d+)>/gi)];
