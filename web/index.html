@@ -71,6 +71,15 @@
     <button type="button" class="mode" data-mode="frames" role="tab" aria-selected="false"><strong>Frames</strong><span>Start / end</span></button>
     <button type="button" class="mode" data-mode="refs" role="tab" aria-selected="false"><strong>References</strong><span>Image / video / audio</span></button>
    </div>
+   <details class="panel" id="sourcePanel"><summary style="cursor:pointer;font-weight:700;margin-bottom:8px">Continue a video · upload a source</summary>
+    <h2>Continue a video</h2><p>Choose the video to extend here. Uploading a video in References supplies guidance; it does not select a continuation source.</p>
+    <label for="sourceTailSeconds">USE THE LAST (SECONDS)</label><input id="sourceTailSeconds" type="number" min="2" max="15.1" step="0.1" value="5">
+    <label for="sourceFit">FIT SOURCE TO SELECTED OUTPUT CANVAS</label><select id="sourceFit"><option value="crop">Crop · preserve proportions</option><option value="contain">Contain · black borders</option></select>
+    <label for="sourceMode">CONTINUATION INPUTS</label><select id="sourceMode"><option value="refs">Prompt + references / storyboard</option><option value="text">Prompt + timed keyframes</option></select>
+    <button id="uploadContinuation" class="button alt smallbtn">Upload video to extend</button><input id="continuationFile" type="file" accept=".mp4,.mov,.webm,.mkv,.avi" hidden>
+    <div id="sourceUploadStatus" class="tip" role="status">MP4/MOV/WebM/MKV/AVI · up to 500 MB / 8.8 megapixels. The selected tail is fitted to the output canvas and converted to 24 fps; the full upload is not kept. The protected context uses its last 1.625 s.</div>
+    <div class="tip">To extend an existing project result, use Extend clip on that result below. Storyboard = shot plan in References; keyframe = one image at a chosen time.</div>
+   </details>
    <section class="panel" id="framesSection" hidden>
     <h2>Start &amp; end frames</h2><p>Set the exact first frame, last frame, or both. The first image should match the canvas aspect ratio.</p>
    <div class="framegrid">
@@ -97,7 +106,7 @@
     <div id="error" class="notice error hidden" role="alert"></div>
    </section>
    <section class="panel" id="guidesPanel"><h2>Temporal keyframes</h2><p>Image guides at chosen times. Available when the server has native H3 AddGuide.</p><label for="guideKind">GUIDE TYPE</label><select id="guideKind"><option value="image">Image keyframe</option><option value="audio" disabled>Timed audio · advanced</option><option value="video" disabled>Video / AV clip · advanced</option></select><button id="addGuide" class="button alt smallbtn" disabled>Add guide</button><input id="guideFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><div id="guideList" class="refs"></div><div id="guideStatus" class="tip">Connect the server to check availability.</div></section>
-   <section class="panel hidden" id="continuationPanel"><h2>Extend</h2><div id="continuationStatus" class="tip"></div><button id="clearContinuation" class="button alt smallbtn">Clear continuation</button></section>
+   <section class="panel hidden" id="continuationPanel"><h2>Active continuation</h2><div id="continuationStatus" class="tip"></div><video id="continuationPreview" controls preload="metadata" style="width:100%;max-height:160px"></video><div id="continuationCompatibility" class="tip" role="status"></div><button id="continuationReferences" class="button alt smallbtn">Use References / Storyboard · re-encode if needed</button><button id="clearContinuation" class="button alt smallbtn">Clear continuation</button></section>
    <section class="panel">
     <h2>LoRAs <span id="loraCount" class="tip"></span></h2><p>Installed adapters appear here. Enable only the ones you want on this render.</p>
     <div id="loraList" class="refs"><div class="tip">Connect ComfyUI to load installed LoRAs.</div></div>

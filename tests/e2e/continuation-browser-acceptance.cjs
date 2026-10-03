@@ -1,0 +1,68 @@
+const {chromium}=require(process.env.H3_TEST_PLAYWRIGHT||'playwright');
+const {spawn}=require('node:child_process');
+const path=require('node:path');
+const assert=require('node:assert/strict');
+(async()=>{
+ const base='http://127.0.0.1:18770';
+ const server=spawn(process.env.H3_TEST_PYTHON||'python',[path.join(__dirname,'cpu_fixture.py'),'18770'],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+ let browser,page,stderr='';server.stderr.on('data',x=>stderr+=x);
+ try{
+  for(let i=0;i<80;i++){try{await fetch(base+'/system_stats');break;}catch{await new Promise(r=>setTimeout(r,100));}}
+  await fetch(base+'/__enable_continuation');
+  browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1440,height:1100}});page.setDefaultTimeout(15000);
+  const errors=[];page.on('pageerror',x=>errors.push(x.message));
+  await page.goto(base+'/extensions/h3_studio/index.html');
+  await page.waitForFunction(()=>projectCtrl?.currentProject&&!state.projectLoading&&state.labCapabilities?.continuation_ready);
+  await page.locator('#prompt').fill('Keep this text-mode draft.');
+  await page.evaluate(()=>state.prompts.refs='Keep this reference-mode draft.');
+  const bytes=Buffer.from(await(await fetch(base+'/__fixtures/external-25fps.mp4')).arrayBuffer());
+  await page.locator('#sourcePanel summary').click();
+  await page.locator('#sourceTailSeconds').fill('2');
+  await page.locator('#continuationFile').setInputFiles({name:'external-25fps.mp4',mimeType:'video/mp4',buffer:bytes});
+  await page.waitForFunction(()=>state.continuation?.type==='imported'&&!state.projectLoading);
+  assert.equal(await page.locator('#prompt').inputValue(),'Keep this reference-mode draft.');
+  assert.equal(await page.evaluate(()=>state.prompts.text),'Keep this text-mode draft.');
+  assert.equal(await page.evaluate(()=>state.mode),'refs');
+  assert.equal(await page.locator('[data-mode="frames"]').isDisabled(),true);
+  const source=await page.evaluate(()=>({...state.continuation}));
+  assert.equal(source.source_duration_seconds,2);assert.equal(source.context_length,39);
+  assert.equal(await page.locator('#aspectPortrait').isDisabled(),true);
+  await page.evaluate(()=>setAspectFormat('9:16'));assert.equal(await page.evaluate(()=>state.width),1280);
+  const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=1280;c.height=704;c.getContext('2d').fillRect(0,0,1280,704);return c.toDataURL('image/png').split(',')[1];});
+  const image={name:'storyboard.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')};
+  const picker=page.waitForEvent('filechooser');await page.locator('#addRef').click();await(await picker).setFiles(image);
+  await page.waitForFunction(()=>state.refs.length===1);
+  await page.locator('#refs select').first().selectOption('storyboard');
+  await page.locator('#guideFile').setInputFiles({...image,name:'one-panel.png'});
+  await page.locator('#guideList input[type="number"]').first().fill('1');
+  await page.locator('#guideList input[type="number"]').first().dispatchEvent('change');
+  await page.locator('#prompt').fill('Continue the scene. Use @storyboard as the upcoming shot plan, left to right.');
+  await page.locator('#btnSaveProject').click();
+  await page.waitForFunction(()=>projectCtrl.currentProject?.draft?.guides?.length===1);
+  await page.reload();await page.waitForFunction(()=>state.continuation?.source_asset_id&&state.refs.length===1&&state.guides.length===1&&!state.projectLoading);
+  assert.equal(await page.evaluate(()=>state.continuation.source_take_id),source.source_take_id);
+  assert.equal(await page.evaluate(()=>state.refs[0].role),'storyboard');
+  assert.equal(await page.evaluate(()=>state.guides[0].frame_idx),24);
+  await page.locator('#generate').click();await page.waitForFunction(()=>state.running&&!String(state.running).startsWith('request:'));
+  const all=await(await fetch(base+'/__captured')).json();const graph=all.at(-1).prompt;
+  assert.ok(Object.values(graph).some(x=>x.class_type==='MiniMaxH3ExistingVideoMaskedContext'));
+  assert.equal(graph['1'].inputs.unet_name,'minimax_h3_ref2va_pruned_int8_convrot.safetensors');
+  assert.equal(Object.values(graph).find(x=>x.class_type==='MiniMaxH3AddGuide').inputs.frame_idx,63);
+  assert.ok(JSON.stringify(graph).includes('multi-panel storyboard'));
+  await page.locator('#cancel').click();await page.waitForFunction(()=>!state.busy&&!state.running);
+  await page.evaluate(()=>{selectMode('text');state.continuation={...state.continuation,type:'generated',source_token:state.continuation.source_take_id,source_model:modelFL};renderContinuation();});
+  await page.locator('[data-mode="refs"]').click();assert.equal(await page.evaluate(()=>state.mode),'text');
+  const before=await page.evaluate(()=>state.refs.length);
+  await page.evaluate(async()=>{try{await applyQwenHandoff({asset_id:'not-accessed'},'reference');}catch{}});
+  assert.equal(await page.evaluate(()=>state.refs.length),before);
+  await page.locator('#continuationReferences').click();
+  await page.waitForFunction(()=>state.continuation?.type==='imported'&&state.mode==='refs'&&!state.projectLoading);
+  await page.locator('#clearContinuation').click();
+  assert.equal(await page.evaluate(()=>state.continuation),null);
+  assert.equal(await page.locator('[data-mode="frames"]').isDisabled(),false);
+  assert.deepEqual(errors,[]);
+  if(process.env.H3_TEST_SCREENSHOT)await page.screenshot({path:process.env.H3_TEST_SCREENSHOT,fullPage:true});
+  console.log(JSON.stringify({passed:true,checks:['external 25fps upload to real owned 24fps source','mode drafts retained','canvas and protected opening guarded','storyboard plus timed panel survives reload','Ref2VA context and keyframe offset wired together','generated checkpoint switch guarded','explicit video re-encode path','clear source restores normal controls'],errors},null,2));
+ }catch(e){console.error(e.stack);if(page)console.error(await page.evaluate(()=>({error:document.querySelector('#error').textContent,mode:state.mode,loading:state.projectLoading,source:state.continuation})).catch(()=>({})));console.error(stderr);process.exitCode=1;}
+ finally{if(browser)await browser.close();server.kill();}
+})();

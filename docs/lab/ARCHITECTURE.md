@@ -41,3 +41,13 @@ Context usage/purge targets the runtime directory and protects accepted lineage 
 ## Evidence boundary
 
 Actual CPU browser, HTTP/service, safetensors and FFmpeg checks are in TEST_REPORT.md. There has been no H3 weight loading, local CUDA inference, remote deployment, or live model quality approval. Optional Upscaler/AudioRefine remain investigations, with no visible nonfunctional controls.
+
+## External continuation source and separated controls
+
+`Continue a video` is a collapsible source panel, separate from Reference library and Temporal keyframes. Multipart `/h3_studio/lab/media/upload_continuation` requires an active project, caps uploads at 500 MB, supports MP4/MOV/WebM/MKV/AVI, and retains only the selected last 2–15.1 seconds (default 5). Source duration may be shorter if it still supplies at least 40 canonical frames. It normalizes to 24 fps and the selected fixed canvas, using source-coordinate crop or proportion-preserving contain. The protected context remains the final 39 frames/1.625 seconds, independent of uploaded duration.
+
+Preparation is CPU-only: one conversion at a time, one FFmpeg thread, input dimensions/pixels bounded to 8192/8.8MP, output at most 2048 per dimension, timeout180s, and Linux host/cgroup memory headroom of at least512MiB. Relative audio start timestamps are preserved, opening gaps and missing/end-of-track audio are padded with silence. Prepared media is verified by decoded frame count before atomic project source-take append. Cancellation waits for workers before cleanup and keeps committed source media. Full original uploads are deleted; the prepared source/asset/take remains private and portable. No queue submission or model load occurs during preparation.
+
+Source preview and summary show selected duration, protected context and net new duration. Uploaded sources choose prompt-only FL2VA or References/Storyboard Ref2VA. Start/end Frames mode and canvas/aspect changes are blocked during continuation; timed guides remain available in the new-content timeline. Direct saved-latent checkpoint switches are refused. The explicit References action re-encodes an owned source video before changing FL2VA to Ref2VA. Mode prompts survive these actions; references cannot bypass the checkpoint gate via Qwen/results handoff.
+
+A storyboard stays a semantic shot-plan reference; it never creates panel crops or keyframe times automatically. Upload an individual panel as a timed keyframe separately if needed. The prepared source is a root take, not automatically accepted; accepting source and continuation separately determines assembled sequence content.

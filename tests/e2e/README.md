@@ -16,3 +16,5 @@ The image workspace has a separate acceptance script: `node tests/e2e/image-brow
 
 
 Image cancellation removes only the identified pending queue entry and verifies removal. Running images stay tracked because this version cannot safely interrupt a shared ComfyUI worker. The image acceptance script verifies this refusal, retained inputs after a lost response, recovery using the save-node token, and duplicate-click protection while readiness is pending.
+
+`node tests/e2e/continuation-browser-acceptance.cjs` uses port18770 for the external continuation-source journey: real25fps MP4 normalization, project restore, storyboard plus timed image guide, source/mode/canvas guards and explicit re-encoding. The captured graph is never executed.

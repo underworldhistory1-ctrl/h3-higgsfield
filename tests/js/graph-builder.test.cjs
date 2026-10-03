@@ -6,6 +6,14 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildGraph } = require('../../web/h3/graph-builder.js');
 
+test('continuation rejects overlapping frame mode, canvas mismatch and checkpoint switching',()=>{
+  const base={mode:'text',width:1280,height:704,target_frames:175,continuation:{type:'generated',source_token:'abcdef123456',source_model:'minimax_h3_fl2va_pruned_int8_convrot.safetensors',source_canvas:{width:1280,height:704}}};
+  const caps={continuation_ready:true};
+  assert.throws(()=>buildGraph({...base,mode:'frames'}, {},caps),/protected source context/);
+  assert.throws(()=>buildGraph({...base,width:704,height:1280}, {},caps),/canvas/);
+  assert.throws(()=>buildGraph({...base,mode:'refs'}, {},caps),/re-encode/);
+});
+
 describe('H3 Graph Builder', () => {
   test('frames mode: first and last frames use nodes 15 and 16, avoiding node 13 collision', () => {
     const spec = {

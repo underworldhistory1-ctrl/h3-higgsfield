@@ -42,6 +42,9 @@
     const contextLength = Number(renderSpec.continuation?.context_length ?? 39);
     if (renderSpec.continuation) {
       const cont = renderSpec.continuation;
+      if(mode==='frames')throw new Error("Continuation uses protected source context; use timed guides instead of start/end frames.");
+      if(cont.source_canvas&&(Number(cont.source_canvas.width)!==width||Number(cont.source_canvas.height)!==height))throw new Error("Continuation canvas must match its source.");
+      if(cont.type==='generated'&&cont.source_model&&cont.source_model!==(isRefs?MODEL_REF:MODEL_FL))throw new Error("Changing the continuation checkpoint requires the explicit video re-encode path.");
       if (!["generated", "imported"].includes(cont.type)) throw new Error("Unknown continuation type.");
       if (!(cont.type === "generated" ? cont.source_token : cont.source_file)) throw new Error("Continuation source is missing.");
       if (!Number.isInteger(contextLength) || contextLength < 39 || (contextLength - 39) % 51 !== 0 || contextLength >= length) throw new Error("Continuation context must be an exact shared AV boundary shorter than the target.");

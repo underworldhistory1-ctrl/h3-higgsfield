@@ -121,7 +121,7 @@ function updateCapabilities(){
   document.querySelectorAll(".mode").forEach(button=>{
     const mode=button.dataset.mode;
     const available=mode==="refs"?state.modelsReady.ref2va&&state.nodesReady.MiniMaxH3ReferenceToVideo:state.modelsReady.fl2va&&state.nodesReady.MiniMaxH3ImageToVideo&&(mode!=="frames"||state.nodesReady.LoadImage);
-    button.disabled=state.busy||!available;
+    button.disabled=state.busy||!available||(!!state.continuation&&mode==="frames");
     button.title=available?"":mode==="refs"?"Install the Ref2VA checkpoint and native reference node.":"Install the FL2VA checkpoint and required image node.";
   });
   [...$("refKind").options].forEach(option=>{option.disabled=option.value==="image"?!state.nodesReady.LoadImage:option.value==="video"?!state.nodesReady.LoadVideo||!state.nodesReady.GetVideoComponents:!state.nodesReady.LoadAudio;});
@@ -171,6 +171,11 @@ const post = async (path, body) => {
 
 function selectMode(mode, internal=false) {
   if (state.busy || state.projectLoading&&!internal) return;
+  if(!internal&&state.continuation){
+    if(mode==="frames"){info("Use Temporal keyframes for the new content. The continuation source already supplies the protected opening context.",true);return;}
+    const expected=mode==="refs"?modelRef:modelFL;
+    if(state.continuation.type==="generated"&&state.continuation.source_model!==expected){info("Use the Active continuation re-encode action before changing this source's checkpoint.",true);return;}
+  }
   if(!internal&&document.querySelector('.mode[data-mode="'+mode+'"]')?.disabled)return;
   state.prompts[state.mode]=$("prompt").value;
   state.mode = mode;
@@ -195,6 +200,7 @@ function selectMode(mode, internal=false) {
   renderPromptAssets();
   info(disabledLoras.length?"Disabled incompatible LoRA(s) for this mode: "+disabledLoras.map(item=>item.name).join(", "):"");
   saveDraft();
+  renderContinuation();
   if(state.modelsReady)checkConnection();
 }
 document.querySelectorAll(".mode").forEach(b => b.onclick = () => selectMode(b.dataset.mode));
@@ -356,7 +362,7 @@ function renderEstimates() {
       const pressed = fmt === currentFmt;
       el.setAttribute("aria-pressed",String(pressed));
       el.classList.toggle("selected",pressed);
-      el.disabled=state.busy;
+      el.disabled=state.busy||state.projectLoading||!!state.continuation;
     }
   }
   const activeSizes = aspectPresets[currentFmt] || aspectPresets["16:9"];
@@ -371,8 +377,8 @@ function renderEstimates() {
     const time = document.createElement("span");
     time.textContent = fmt(est.low) + " – " + fmt(est.high);
     b.append(strong,time);
-    b.disabled=state.busy;
-    b.onclick = () => {if(state.busy)return;state.width=w;state.height=h;renderEstimates();saveDraft();};
+    b.disabled=state.busy||state.projectLoading||!!state.continuation;
+    b.onclick = () => {if(state.busy||state.projectLoading||state.continuation)return;state.width=w;state.height=h;renderEstimates();saveDraft();};
     wrap.append(b);
   });
   state.estimated = estimateFor();
@@ -470,7 +476,8 @@ function aliasName(fileName) {
   return unique;
 }
 function setAspectFormat(fmt){
-  if(state.busy)return;
+  if(state.busy||state.projectLoading)return;
+  if(state.continuation){info("The continuation canvas is locked to its source. Clear continuation before changing aspect or size.",true);return;}
   state.aspectFormat=fmt;
   const list=aspectPresets[fmt]||aspectPresets["16:9"];
   state.width=list[0][0];
@@ -1512,27 +1519,31 @@ $("download").onclick=()=>{
   const a=document.createElement("a");a.href=videoURL(entry.file);a.download=entry.file.filename;document.body.append(a);a.click();a.remove();
 };
 if($("extendVideo")) $("extendVideo").onclick=async()=>{
-  const entry=state.current;if(!entry||state.busy)return;
+  const entry=state.current;if(!entry||state.busy||state.projectLoading)return;
   try{
+    await withProjectLoading(async()=>{
     await refreshLabCapabilities();
     if(!state.labCapabilities?.continuation_ready)throw Error("Install the pinned continuation engine on the isolated server first. See Lab readiness.");
     const token=entry.takeId||entry.file.filename.match(/h3_studio_([a-f0-9]{12})/)?.[1];
-    if(!token)throw Error("This older clip has no saved sampler context.");
     if($("extendSourceMethod").value==="imported"){
       const imported=await post("/h3_studio/lab/media/import_video",{filename:entry.file.filename,output_file:resultOutputPath(entry),project_id:state.activeProjectId});
       if(imported.metadata.width!==state.width||imported.metadata.height!==state.height)throw Error("Use the source video's canvas before extending it.");
       state.currentClipId="clip_"+crypto.randomUUID();
-      state.continuation={type:"imported",source_take_id:entry.takeId,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},context_length:39,audio_feather_ticks:8};
-      $("durationSeconds").value="7.3";syncDuration();renderContinuation();$("prompt").value="";$("prompt").focus();updatePreviewLive();return;
+    state.continuation={type:"imported",source_take_id:entry.takeId,source_asset_id:imported.asset.asset_id,source_canvas:{width:imported.metadata.width,height:imported.metadata.height},source_output:resultOutputPath(entry),source_name:entry.file.filename,source_duration_seconds:imported.metadata.frame_count/24,context_length:39,audio_feather_ticks:8};
+      if(state.mode==="frames")setContinuationMode("text");
+      $("durationSeconds").value="7.3";syncDuration();renderContinuation();$("prompt").focus();updatePreviewLive();return;
     }
+    if(!token)throw Error("This older clip has no saved sampler context. Choose Video context · re-encode.");
     const context=await projectCtrl.fetchJson(`/h3_studio/lab/contexts/${encodeURIComponent(token)}`);
     const expected=state.mode==="refs"?modelRef:modelFL;
     if(context.model_id!==expected||context.width!==state.width||context.height!==state.height)throw Error("Use the source checkpoint and canvas before extending this clip. Switching checkpoints has not been validated.");
     state.currentClipId="clip_"+crypto.randomUUID();
-    state.continuation={type:"generated",source_take_id:entry.takeId,source_token:token,source_model:context.model_id,source_canvas:{width:context.width,height:context.height},context_length:39,audio_feather_ticks:8};
+    state.continuation={type:"generated",source_take_id:entry.takeId,source_token:token,source_model:context.model_id,source_canvas:{width:context.width,height:context.height},source_output:resultOutputPath(entry),source_name:entry.file.filename,context_length:39,audio_feather_ticks:8};
+    if(state.mode==="frames")setContinuationMode("text");
     $("durationSeconds").value="7.3";syncDuration();renderContinuation();
-    $("prompt").value="";$("prompt").placeholder="Describe continuation motion and sound…";$("prompt").focus();
+    $("prompt").placeholder="Describe continuation motion and sound…";$("prompt").focus();
     updatePreviewLive();
+    });
   }catch(e){info(e.message,true);}
 };
 $("discard").onclick=async()=>{
@@ -1792,6 +1803,8 @@ function updateProjectUI(proj) {
 
 async function applyQwenHandoff(asset, asRole) {
   try{
+    if(state.continuation?.type==="generated"&&state.continuation.source_model!==modelRef&&asRole==="reference")throw Error("Use the Active continuation References action to re-encode this source before adding references.");
+    if(state.continuation&&(asRole==="start_frame"||asRole==="end_frame"))throw Error("Clear continuation to use start/end frames. For a timed image in the new content, add a Temporal keyframe.");
     const blob=await projectCtrl.mediaBlob(asset.asset_id);
     const file=new File([blob],asset.original_name||"qwen.png",{type:blob.type||"image/png"});
     const item={assetId:asset.asset_id,file,url:URL.createObjectURL(blob)};

@@ -105,6 +105,7 @@ fixture_media=pathlib.Path(store.name)/'fixture_media';fixture_media.mkdir()
 with wave.open(str(fixture_media/'voice.wav'),'wb') as audio:
     audio.setnchannels(1);audio.setsampwidth(2);audio.setframerate(32000);audio.writeframes(b'\0'*(32000*2*2))
 subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-f','lavfi','-i','color=c=blue:s=1280x704:r=24:d=2','-f','lavfi','-i','anullsrc=r=32000:cl=mono','-t','2','-c:v','libx264','-preset','ultrafast','-c:a','aac',str(fixture_media/'motion.mp4')],check=True)
+subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-f','lavfi','-i','color=c=green:s=320x180:r=25:d=3','-c:v','libx264','-threads','1',str(fixture_media/'external-25fps.mp4')],check=True)
 import shutil
 video_dir=pathlib.Path(store.name)/'output'/'video';video_dir.mkdir()
 shutil.copy2(fixture_media/'motion.mp4',video_dir/'h3_studio_abcdef123456.mp4')

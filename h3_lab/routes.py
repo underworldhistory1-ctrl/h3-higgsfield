@@ -12,6 +12,7 @@ import shutil
 import uuid
 import re
 import subprocess
+import threading
 from aiohttp import web
 
 from .assets import AssetService
@@ -22,6 +23,21 @@ from .projects import ProjectService
 from .paths import owned_path, owned_video
 
 _LOG = logging.getLogger("h3_lab.routes")
+
+
+async def _finish_source_worker(function, *args):
+    """Wait out cancellation before cleaning files owned by a CPU worker."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    result = task.result()
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
 
 
 def create_lab_services(storage_root: str, output_root=None):
@@ -49,6 +65,7 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
     jobs = services["jobs"]
     projects = services["projects"]
     contexts = services["contexts"]
+    source_upload_lock = asyncio.Lock()
 
     # Support either aiohttp web.Application or PromptServer routes table
     router = app_or_routes.router if hasattr(app_or_routes, "router") else app_or_routes
@@ -425,6 +442,68 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
         except (ValueError, FileNotFoundError, subprocess.SubprocessError) as err:
             return web.json_response({"error": str(err)}, status=400)
 
+    async def handle_upload_continuation(request):
+        # Backpressure uploads before decoding; one bounded CPU conversion at a time.
+        async with source_upload_lock:
+            return await handle_upload_continuation_impl(request)
+
+    async def handle_upload_continuation_impl(request):
+        temporary = None
+        prepared = None
+        committed = threading.Event()
+        try:
+            if output_root is None:
+                raise ValueError("Canonical output root unavailable")
+            pid = request.query.get("project_id")
+            if not pid or not projects.get_project(pid):
+                raise ValueError("Open a project before uploading a continuation source")
+            width, height = int(request.query.get("width", "0")), int(request.query.get("height", "0"))
+            keep = float(request.query.get("keep_seconds", "5"))
+            fit = request.query.get("fit", "crop")
+            reader = await request.multipart()
+            part = await reader.next()
+            if not part or part.name != "file" or not part.filename:
+                raise ValueError("Choose a video file")
+            name = pathlib.PurePosixPath(part.filename.replace("\\", "/")).name[:200]
+            extension = pathlib.Path(name).suffix.lower()
+            if extension not in (".mp4", ".mov", ".webm", ".mkv", ".avi"):
+                raise ValueError("Choose MP4, MOV, WebM, MKV or AVI")
+            temporary = services["storage_root"] / ("upload_source_" + uuid.uuid4().hex + extension)
+            total = 0
+            with temporary.open("wb") as stream:
+                while chunk := await part.read_chunk(65536):
+                    total += len(chunk)
+                    if total > 500 * 1024 * 1024:
+                        raise ValueError("Continuation source exceeds 500 MB")
+                    stream.write(chunk)
+            if not total:
+                raise ValueError("Video file is empty")
+            token = uuid.uuid4().hex[:12]
+            relative = f"lab_storage/imported_takes/{pid}/h3_studio_{token}_00001.mp4"
+            prepared = owned_path(output_root, relative, require_file=False)
+            from .video_source import prepare_video_source
+            metadata = await _finish_source_worker(prepare_video_source, temporary, prepared, width, height, keep, fit)
+            metadata["source_output"] = relative
+            asset = await _finish_source_worker(assets.register_asset, str(prepared), "video", name, pid, metadata)
+            take = {"take_id": token, "clip_id": "source_" + token, "status": "completed",
+                "output_file": relative, "unique_frames": metadata["frame_count"], "overlap_frames": 0,
+                "parent_take_id": None, "imported_source": True, "created_at": asset["created_at"],
+                "effective_settings": {"width": width, "height": height, "fps": 24,
+                    "duration_seconds": metadata["used_duration_seconds"]}, "source_asset_id": asset["asset_id"]}
+            def commit_source():
+                projects.append_source_take(pid, asset, take, metadata)
+                committed.set()
+            await _finish_source_worker(commit_source)
+            prepared = None  # Committed take is permanent project-owned media.
+            return web.json_response({"asset": asset, "metadata": metadata, "take": take}, status=201)
+        except (ValueError, FileNotFoundError, subprocess.SubprocessError, StopIteration) as error:
+            return web.json_response({"error": "Video preparation failed" if isinstance(error, subprocess.SubprocessError) else str(error)}, status=getattr(error, "status_code", 400))
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+            if prepared and not committed.is_set():
+                prepared.unlink(missing_ok=True)
+
     async def handle_import_video(request):
         try:
             if output_root is None:
@@ -524,6 +603,7 @@ def register_lab_routes(app_or_routes, storage_root: str, folder_paths_mod=None,
     routes = [
         ("POST", "/h3_studio/lab/media/frame", handle_media_frame),
         ("POST", "/h3_studio/lab/media/import_video", handle_import_video),
+        ("POST", "/h3_studio/lab/media/upload_continuation", handle_upload_continuation),
         ("POST", "/h3_studio/lab/media/export", handle_media_export),
         ("GET", "/h3_studio/lab/exports/{name}", handle_export_file),
         ("POST", "/h3_studio/lab/assets", handle_upload_asset),

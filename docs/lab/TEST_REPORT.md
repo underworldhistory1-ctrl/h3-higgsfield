@@ -4,8 +4,8 @@ The original f1042d2 helper-only success report is superseded. Main UI/backend i
 
 ## Verified CPU boundaries
 
-- Python service, HTTP, filesystem, project/asset/context integrity, real FFmpeg synthetic-media assembly and standby isolation tests: 80 tests passed.
-- JavaScript compiler, graph and project controller contracts: 26 passing tests.
+- Python service, HTTP, filesystem, project/asset/context integrity, real FFmpeg synthetic-media assembly and standby isolation tests: 91 tests passed.
+- JavaScript compiler, graph and project controller contracts: 27 passing tests.
 - Real Chromium exercised the connected video interface with an isolated CPU backend: 13 journeys passing with zero uncaught JavaScript errors after the final video standby guards.
 - Additional real Chromium image acceptance passes create/edit graph submission, zero seed, duplicate-click prevention, queued-only cancellation, running-job protection, lost-acknowledgement recovery and standby refusal; zero uncaught JavaScript errors.
 - Browser journeys cover restored frames/references, neutral custom roles, fitted server images, Qwen image handoff, timed image/audio/video guides, imported continuation, request acknowledgement loss, and cancellation before and after backend acceptance.
@@ -31,3 +31,9 @@ Run sequentially only after current production completes and manual resource che
 8. Qwen image generation/handoff if an actual complete profile is installed. Missing models must stay unavailable.
 
 Latent Upscaler and AudioRefine remain documented investigations, not implemented controls. No GPU output or quality judgment is inferred from mocks, CPU tensors, syntax checks or a responsive page.
+
+## Final source-upload acceptance
+
+Eight additional real Chromium journeys pass: real25fps upload to owned24fps source, preservation of mode prompts, source canvas/opening guards, storyboard+timed panel save/reload, Ref2VA context with guide offset63 (39context+24new), refusal of direct latent checkpoint switch, explicit video re-encoding and clear-source control restoration. No model workflow is executed.
+
+New CPU service tests verify actual FFmpeg source preparation, frame counts, crop/contain, silent media, delayed soundtracks, safe extreme-aspect crop-before-scale, portable project bundles, invalid/short sources and cleanup. Deterministic cancellation tests prove committed take media survives and the serialized conversion lock remains held until its worker finishes. Host/cgroup memory checks refuse preparation with insufficient headroom. Online GPU rendering/quality gates remain pending.

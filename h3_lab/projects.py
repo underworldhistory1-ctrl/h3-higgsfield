@@ -136,6 +136,18 @@ class ProjectService:
             self._write_manifest(project_id, updated)
             return updated
 
+    def append_source_take(self, project_id, asset, take, metadata):
+        """Append an imported source without overwriting a concurrent project save."""
+        with self._lock:
+            project = self.get_project(project_id)
+            if not project:
+                raise ValueError("Project not found")
+            if not any(item.get("asset_id") == asset["asset_id"] for item in project.get("assets", [])):
+                project.setdefault("assets", []).append({"asset_id": asset["asset_id"], "kind": "video",
+                    "server_path": asset["server_path"], "alias": "continuation_" + take["take_id"], "metadata": metadata})
+            project.setdefault("takes", []).append(take)
+            return self.save_project(project_id, project, project["revision"])
+
     def duplicate_project(self, project_id: str, new_name: str = None) -> dict:
         current = self.get_project(project_id)
         if not current:
