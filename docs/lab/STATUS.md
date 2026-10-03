@@ -7,7 +7,7 @@ The follow-up implements connected workspace/project/asset/queue/guide/continuat
 | Gate | State |
 |---|---|
 | Source review and corrective implementation | Completed locally in the lab |
-| Python service/HTTP/context/FFmpeg checks | 91 tests passed |
+| Python service/HTTP/context/FFmpeg checks | 92 tests passed |
 | JS helper contracts and syntax | 27 tests passed |
 | Real Chromium CPU browser acceptance | Passed; final replay after changes recorded in TEST_REPORT.md |
 | Isolated online deployment | Deployed on isolated port 8190; live browser save/reload passed; full GPU process intentionally not started |

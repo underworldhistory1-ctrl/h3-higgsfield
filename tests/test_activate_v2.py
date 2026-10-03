@@ -3,10 +3,28 @@ import pathlib
 import types
 import tempfile
 import unittest
+from unittest.mock import patch
+from deploy import activate_v2
 from deploy.activate_v2 import ActivationBlocked, launch_command, preflight, verify_standby_command
 
 
 class ActivationTests(unittest.TestCase):
+    def test_pidfd_fallback_preserves_stable_handle_and_fails_closed(self):
+        with patch.object(activate_v2.os, 'pidfd_open', create=True) as opened:
+            opened.return_value=17
+            self.assertEqual(activate_v2._pidfd_open(12),17)
+            opened.assert_called_once_with(12)
+        with patch.object(activate_v2, '_pidfd_syscall', return_value=18) as called:
+            old=getattr(activate_v2.os,'pidfd_open',None)
+            if hasattr(activate_v2.os,'pidfd_open'): delattr(activate_v2.os,'pidfd_open')
+            try:
+                self.assertEqual(activate_v2._pidfd_open(12),18)
+                self.assertEqual(called.call_args.args[0],434)
+            finally:
+                if old is not None: activate_v2.os.pidfd_open=old
+        with patch.object(activate_v2.sys,'platform','unsupported'):
+            with self.assertRaises(ActivationBlocked): activate_v2._pidfd_syscall(434)
+
     def checks(self, *, running=False, gpu_busy=False, unavailable=False, gpu="0, 1000", memory=50):
         calls = []
         def read(url):

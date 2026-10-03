@@ -4,7 +4,7 @@ The original f1042d2 helper-only success report is superseded. Main UI/backend i
 
 ## Verified CPU boundaries
 
-- Python service, HTTP, filesystem, project/asset/context integrity, real FFmpeg synthetic-media assembly and standby isolation tests: 91 tests passed.
+- Python service, HTTP, filesystem, project/asset/context integrity, real FFmpeg synthetic-media assembly and standby isolation tests: 92 tests passed.
 - JavaScript compiler, graph and project controller contracts: 27 passing tests.
 - Real Chromium exercised the connected video interface with an isolated CPU backend: 13 journeys passing with zero uncaught JavaScript errors after the final video standby guards.
 - Additional real Chromium image acceptance passes create/edit graph submission, zero seed, duplicate-click prevention, queued-only cancellation, running-job protection, lost-acknowledgement recovery and standby refusal; zero uncaught JavaScript errors.

@@ -4,13 +4,16 @@ This script is never scheduled. It reads production/LTX status, terminates only
 the verified V2 standby process, then starts V2 without installing dependencies.
 """
 import argparse
+import ctypes
 import json
 import os
 import pathlib
+import platform
 import select
 import signal
 import socket
 import subprocess
+import sys
 import urllib.request
 
 ROOT = pathlib.Path("/output/h3-studio-v2")
@@ -19,6 +22,34 @@ INTERPRETER = pathlib.Path("/output/h3-stack/ComfyUI/ComfyUI/.venv/bin/python")
 
 class ActivationBlocked(RuntimeError):
     pass
+
+
+def _pidfd_syscall(number, *arguments):
+    # Linux x86-64 ABI: pidfd_send_signal=424, pidfd_open=434.
+    # https://github.com/torvalds/linux/blob/v6.8/arch/x86/entry/syscalls/syscall_64.tbl
+    # Some older Python/libc builds omit wrappers even on a capable kernel.
+    if sys.platform != "linux" or platform.machine() != "x86_64" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise ActivationBlocked("Safe Linux PID ownership handles are unavailable on this platform")
+    library = ctypes.CDLL(None, use_errno=True)
+    call = library.syscall
+    call.restype = ctypes.c_long
+    result = call(ctypes.c_long(number), *arguments)
+    if result < 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+    return int(result)
+
+
+def _pidfd_open(pid):
+    if hasattr(os, "pidfd_open"):
+        return os.pidfd_open(pid)
+    return _pidfd_syscall(434, ctypes.c_int(pid), ctypes.c_uint(0))
+
+
+def _pidfd_send_signal(descriptor, sig):
+    if hasattr(signal, "pidfd_send_signal"):
+        return signal.pidfd_send_signal(descriptor, sig)
+    return _pidfd_syscall(424, ctypes.c_int(descriptor), ctypes.c_int(sig), ctypes.c_void_p(), ctypes.c_uint(0))
 
 
 def get_json(url):
@@ -108,9 +139,7 @@ def stop_owned_standby(pid_file, root=ROOT):
         pid = int(pathlib.Path(pid_file).read_text(encoding="utf-8").strip())
         if pid <= 1 or pid == os.getpid():
             raise ActivationBlocked("Invalid standby PID")
-        if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
-            raise ActivationBlocked("Safe Linux PID ownership handles are unavailable")
-        descriptor = os.pidfd_open(pid)
+        descriptor = _pidfd_open(pid)
     except ActivationBlocked:
         raise
     except Exception as error:
@@ -118,7 +147,7 @@ def stop_owned_standby(pid_file, root=ROOT):
     try:
         command = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8").split("\0")
         verify_standby_command([value for value in command if value], root)
-        signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+        _pidfd_send_signal(descriptor, signal.SIGTERM)
         if not select.select([descriptor], [], [], 20)[0]:
             raise ActivationBlocked("V2 standby did not exit; full V2 was not started")
     except OSError as error:

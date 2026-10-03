@@ -76,3 +76,5 @@ Run the live matrix in TEST_REPORT.md sequentially, within a user-specified budg
 ## Rollback
 
 Stop only the process listening on the lab port. Production files and outputs were never changed. Preserve LAB_ROOT/output, including lab_storage, h3_lab_contexts and latent recovery files, until you decide to remove the lab. Do not issue automatic recursive deletion, move data into production, or promote code before the live gates pass.
+
+The server Python3.10 build omits pidfd wrappers. V2 ownership checks prefer native wrappers and use a Linuxx86-64-only kernel syscall fallback when absent, preserving a stable process handle. Unknown platforms/kernels fail closed. The ABI identifiers follow the [official Linux x86-64 syscall table](https://github.com/torvalds/linux/blob/v6.8/arch/x86/entry/syscalls/syscall_64.tbl). No PID-based global kill is used.
