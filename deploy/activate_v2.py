@@ -160,7 +160,9 @@ def stop_owned_standby(pid_file, root=ROOT):
 def port_unused():
     probe = socket.socket()
     try:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", 8190))
+        probe.listen(1)
     except OSError as error:
         raise ActivationBlocked("Port 8190 is still in use; no additional server was launched") from error
     finally:
