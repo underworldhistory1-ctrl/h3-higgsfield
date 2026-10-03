@@ -117,9 +117,11 @@
       throw new Error('Write the scene prompt first.');
     }
 
-    const originalSections = parseStructuredSections(source);
     const expectedSections = mode === 'refs' ? NATIVE_REF_SECTIONS : NATIVE_TEXT_SECTIONS;
-    const hasNativeSections = originalSections && Object.keys(originalSections).some(name => [...NATIVE_REF_SECTIONS, ...NATIVE_TEXT_SECTIONS].includes(name));
+    const nativeNames = [...new Set([...NATIVE_REF_SECTIONS, ...NATIVE_TEXT_SECTIONS])];
+    const hasNativeSections = new RegExp('^(?:' + nativeNames.join('|') + '):\\s*', 'im').test(source);
+    // Ordinary prose headings (including repeated Action/Camera headings) are content.
+    const originalSections = promptMode === 'structured' || hasNativeSections ? parseStructuredSections(source) : null;
     if (promptMode === 'structured' || hasNativeSections) {
       if (!originalSections) throw new Error('Structured prompt requires native section headers.');
       const missing = expectedSections.filter(name => !originalSections[name]);
@@ -154,7 +156,7 @@
         return frameTags.get(name);
       });
 
-      const structured = parseStructuredSections(source);
+      const structured = originalSections ? parseStructuredSections(source) : null;
       if (structured && structured.integrated_multimodal_description) {
         return { compiled_prompt: source, bindings, warnings };
       }
@@ -175,7 +177,7 @@
 
     // --- TEXT MODE ---
     if (mode === 'text') {
-      const structured = parseStructuredSections(source);
+      const structured = originalSections ? parseStructuredSections(source) : null;
       if (structured && structured.integrated_multimodal_description) {
         return { compiled_prompt: source, bindings: [], warnings };
       }
@@ -292,7 +294,7 @@
       }
 
       // Native structured tags are valid reference mentions as well as aliases.
-      const nativeSections = parseStructuredSections(source);
+      const nativeSections = originalSections;
       const missing = bindings.filter(binding => {
         const pattern = new RegExp('@' + binding.alias + '(?=$|[^\\p{L}\\p{N}_-])', 'u');
         if (pattern.test(source)) return false;
@@ -317,7 +319,7 @@
       }
 
       // Check if prompt is already structured or user chose structured mode
-      const structured = parseStructuredSections(substituted);
+      const structured = originalSections ? parseStructuredSections(substituted) : null;
       if (structured && (promptMode === 'structured' || hasNativeSections)) {
         validateSubjectBindings(substituted, structured, bindings);
         // Validate native token indices in structured prompt

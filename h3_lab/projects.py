@@ -284,7 +284,10 @@ class ProjectService:
                         with zf.open(payload_name) as source, target.open("wb") as destination:
                             shutil.copyfileobj(source, destination)
                         with target.open("rb") as stream:
-                            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                            hasher = hashlib.sha256()
+                            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                                hasher.update(chunk)
+                            digest = hasher.hexdigest()
                         if context.get("sha256") != digest:
                             target.unlink(missing_ok=True)
                             raise ValueError("Bundle context checksum mismatch")

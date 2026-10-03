@@ -122,7 +122,7 @@ async function persistProjectDraft(){
   const refreshed=await projectCtrl.fetchJson(`/h3_studio/lab/projects/${encodeURIComponent(projectCtrl.currentProject.project_id)}`);projectCtrl.currentProject=refreshed;updateProjectUI(refreshed);
   const descriptor=item=>item?Object.fromEntries(Object.entries(item).filter(([key])=>!["file","url","previewUrl","meta","uploadProgress","uploadReady","originalPreviewUrl"].includes(key))):null;
   return {version:1,mode:state.mode,prompts:{...state.prompts,[state.mode]:$("prompt").value},canvas:{width:state.width,height:state.height},
-    promptMode:$("promptMode").value,frameFit:$("frameFit").value,first:descriptor(state.first),last:descriptor(state.last),
+    promptMode:$("promptMode").value,frameFit:$("frameFit").value,fitImages:$("fitImages").checked,fitFrames:$("fitFrames").checked,first:descriptor(state.first),last:descriptor(state.last),
     refs:state.refs.map(descriptor),guides:state.guides.map(descriptor),continuation:state.continuation,
     settings:{duration:$("duration").value,durationSeconds:$("durationSeconds").value,steps:$("steps").value,seed:$("seed").value,refSize:$("refSize").value,renderMethod:method()},loras:state.loras.filter(x=>x.enabled)};
 }
@@ -135,8 +135,9 @@ async function hydrateProjectDraft(draft){
   state.first=first;state.last=last;state.refs=refs.filter(Boolean);state.guides=guides.filter(Boolean);state.continuation=draft.continuation||null;
   if(draft.canvas){state.width=draft.canvas.width;state.height=draft.canvas.height;}
   state.prompts={text:"",frames:"",refs:"",...draft.prompts};state.promptMode=draft.promptMode||"guided";$("promptMode").value=state.promptMode;$("frameFit").value=draft.frameFit||"crop";
+  $("fitImages").checked=draft.fitImages!==false;$("fitFrames").checked=draft.fitFrames!==false;
   for(const [key,value] of Object.entries(draft.settings||{}))if($(key))$(key).value=value;
-  state.desiredLoras=draft.loras||[];
+  state.desiredLoras=state.lorasLoaded?null:(draft.loras||[]);
   state.aspectFormat=Object.keys(aspectPresets).find(k=>aspectPresets[k].some(([w,h])=>w===state.width&&h===state.height))||"16:9";
   state.mode=draft.mode||"text";$("prompt").value=state.prompts[state.mode]||"";selectMode(state.mode,true);state.loras=state.loras.map(x=>({...x,enabled:!!draft.loras?.some(l=>l.name===x.name),strength:draft.loras?.find(l=>l.name===x.name)?.strength??x.strength}));
   await Promise.all([renderFrameItem("first"),renderFrameItem("last")]);renderRefs();renderGuides();renderContinuation();updatePreviewLive();

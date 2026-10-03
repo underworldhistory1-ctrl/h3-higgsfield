@@ -425,7 +425,7 @@ async function loadLoras(){
     const names=(await r.json()).items||[];
     const existing=new Map(state.loras.map(item=>[item.name,item]));
     state.loras=names.map(name=>existing.get(name)||{name,enabled:false,strength:1});
-    if(state.desiredLoras){state.loras=state.loras.map(x=>({...x,enabled:!!state.desiredLoras.find(l=>l.name===x.name),strength:state.desiredLoras.find(l=>l.name===x.name)?.strength??x.strength}));}
+    if(state.desiredLoras){state.loras=state.loras.map(x=>({...x,enabled:!!state.desiredLoras.find(l=>l.name===x.name),strength:state.desiredLoras.find(l=>l.name===x.name)?.strength??x.strength}));state.desiredLoras=null;}
     const managed=state.loras.find(item=>item.name===turboName);if(managed)managed.enabled=false;
     state.lorasLoaded=true;
     updateMethodAvailability();
@@ -1194,8 +1194,9 @@ async function generate() {
     if(!await checkConnection())throw Error(state.labCapabilities?.inference_enabled===false?state.labCapabilities.reason:"Start ComfyUI or install the missing H3 models first.");
     if(method()!==selectedMethod)throw Error("The selected render method is unavailable on this server. Review the method and try again.");
     if(selectedLoras.length&&!state.lorasLoaded)throw Error("Could not verify installed LoRAs. Refresh the list before generating.");
-    const missingLora=selectedLoras.find(name=>!state.loras.some(item=>item.name===name&&item.enabled));
+    const missingLora=selectedLoras.find(name=>!state.loras.some(item=>item.name===name));
     if(missingLora)throw Error("Selected LoRA is no longer installed on this server: "+missingLora);
+    if(selectedLoras.some(name=>!state.loras.some(item=>item.name===name&&item.enabled)))throw Error("LoRA selection changed during the connection check. Review your selections and try again.");
   }catch(e){info(e.message,true);return;}
   info("");uploadMessage("");setBusy(true);state.abortController=new AbortController();
   state.started=Date.now();state.stepDurations=[];state.lastStep=0;state.outputMissingSince=null;

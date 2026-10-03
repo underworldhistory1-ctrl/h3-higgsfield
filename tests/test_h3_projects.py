@@ -1,10 +1,13 @@
 """Unit tests for ProjectService, atomic revisions, and bundle safety."""
 
 import io
+import hashlib
+import json
 import pathlib
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from h3_lab.assets import AssetService
 from h3_lab.projects import ProjectService
@@ -82,6 +85,31 @@ class TestH3Projects(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self.project_service.import_bundle(str(malicious_zip_path))
         self.assertIn("rejected", str(ctx.exception).lower())
+
+    def test_context_bundle_import_without_python311_file_digest(self):
+        output_root = self.storage_root / "output"
+        service = ProjectService(str(self.storage_root), self.asset_service, output_root)
+        token = "a" * 12
+        payload = b"portable-context-payload"
+        bundle = self.storage_root / "context_bundle.zip"
+        with zipfile.ZipFile(bundle, "w") as archive:
+            archive.writestr("project.json", json.dumps({"name": "Context", "assets": [], "takes": []}))
+            archive.writestr(f"contexts/{token}.safetensors", payload)
+            archive.writestr(f"contexts/{token}.json", json.dumps({
+                "token": token, "sha256": hashlib.sha256(payload).hexdigest(),
+            }))
+
+        # Python 3.10 on the deployed server does not provide file_digest.
+        with patch.object(hashlib, "file_digest", create=True):
+            del hashlib.file_digest
+            imported = service.import_bundle(str(bundle))
+
+        contexts = list((output_root / "h3_lab_contexts").glob("*.json"))
+        self.assertEqual(len(contexts), 1)
+        metadata = json.loads(contexts[0].read_text(encoding="utf-8"))
+        self.assertNotEqual(metadata["token"], token)
+        self.assertEqual(contexts[0].with_suffix(".safetensors").read_bytes(), payload)
+        self.assertIsNotNone(service.get_project(imported["project_id"]))
 
     def test_qwen_image_handoff_survives_deletion_of_source(self):
         proj = self.project_service.create_project(name="Qwen Integration")

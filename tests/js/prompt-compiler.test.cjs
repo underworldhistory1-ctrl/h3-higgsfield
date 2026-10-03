@@ -243,3 +243,14 @@ test('guided prose headings do not bypass automatic subject definitions', () => 
   assert.match(result.compiled_prompt, /Action:\n<Subject 1> fights <Subject 2> following <Picture 1>/);
   assert.equal((result.compiled_prompt.match(/^subject_definitions:/gm)||[]).length,1);
 });
+
+
+test('repeated ordinary headings stay prose in all guided modes', () => {
+  for(const mode of ['text','frames','refs']) {
+    const mention=mode==='refs'?'@hero':mode==='frames'?'@start':'the hero';
+    const source=`Action:\n${mention} enters.\nCamera:\nWide shot.\nAction:\n${mention} stops.`;
+    const result=compilePrompt({mode,source_prompt:source,frames:{first:'a.png'},references:[{alias:'hero',kind:'image',role:'character identity'}]});
+    assert.ok((result.compiled_prompt.match(/Action:/g)||[]).length >= 2);
+    if(mode==='refs')assert.match(result.compiled_prompt, /<Subject 1> is .*<Picture 1>/);
+  }
+});
