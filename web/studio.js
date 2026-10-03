@@ -153,11 +153,11 @@ function updateMethodAvailability(){
 }
 function renderMethodInfo(){
   const value=method(),steps=Number($("steps").value),info=methodInfo[value];
-  $("steps").min=value==="turbo"?"4":"20";
+  $("steps").min=value==="turbo"?"4":"8";
   $("steps").max=value==="turbo"?"8":"100";
   $("stepPresets").hidden=value==="turbo";
   document.querySelector(".steps-hint").innerHTML=value==="turbo"?"<strong>6 recommended</strong> · Enter 4–8 steps for Turbo.":"<strong>20 recommended</strong> · Choose a preset or enter a custom value.";
-  $("stepAdvice").textContent=value==="turbo"?"Turbo uses 4–8 steps. More steps do not make it equivalent to Original quality.":"20 is the standard H3 setting. More steps take longer and may not improve quality. Custom range: 20–100.";
+  $("stepAdvice").textContent=value==="turbo"?"Turbo uses 4–8 steps. More steps do not make it equivalent to Original quality.":"20 is the standard H3 setting. More steps take longer and may not improve quality. Custom range: 8–100.";
   document.querySelectorAll("#stepPresets button").forEach(button=>button.classList.toggle("active",Number(button.dataset.steps)===Number($("steps").value)));
   $("profile").replaceChildren();
   const strong=document.createElement("strong");strong.textContent=info.title+(Number.isInteger(steps)&&steps>=Number($("steps").min)&&steps<=Number($("steps").max)?" · "+steps+" steps":" · choose valid steps");
@@ -233,7 +233,7 @@ function restoreDraft(){
   const draftSteps=Number($("steps").value);
   if($("renderMethod").value==="turbo"){
     if(!Number.isInteger(draftSteps)||draftSteps<4||draftSteps>8)$("steps").value="6";
-  }else if(!Number.isInteger(draftSteps)||draftSteps<20||draftSteps>100)$("steps").value="20";
+  }else if(!Number.isInteger(draftSteps)||draftSteps<8||draftSteps>100)$("steps").value="20";
   return state.mode!=="text";
 }
 
@@ -440,7 +440,7 @@ $("refreshLoras").onclick=loadLoras;
 ["steps","refSize"].forEach(id => $(id).addEventListener("change",renderEstimates));
 $("durationSeconds").addEventListener("input",()=>{if(syncDuration())renderEstimates();saveDraft();});
 $("steps").addEventListener("input",()=>{renderMethodInfo();const value=Number($("steps").value);if(Number.isInteger(value)&&value>=Number($("steps").min)&&value<=Number($("steps").max))renderEstimates();else $("estimateNote").textContent="Enter "+$("steps").min+"–"+$("steps").max+" steps to update the estimate.";});
-$("renderMethod").addEventListener("change",()=>{if(method()==="turbo")$("steps").value="6";else if(Number($("steps").value)<20)$("steps").value="20";renderMethodInfo();renderLoras();renderEstimates();saveDraft();});
+$("renderMethod").addEventListener("change",()=>{if(method()==="turbo")$("steps").value="6";else if(Number($("steps").value)<8)$("steps").value="20";renderMethodInfo();renderLoras();renderEstimates();saveDraft();});
 document.querySelectorAll("#stepPresets button").forEach(button=>button.onclick=()=>{$("steps").value=button.dataset.steps;renderMethodInfo();renderEstimates();saveDraft();});
 ["prompt","steps","seed","refSize","renderMethod"].forEach(id => $(id).addEventListener("input",saveDraft));
 $("randomSeed").onclick = () => {$("seed").value = Math.floor(Math.random()*2**31);saveDraft();};

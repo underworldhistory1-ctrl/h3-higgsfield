@@ -122,7 +122,7 @@
     <div class="tip" id="methodAvailability">Optional methods become available when installed on your ComfyUI server.</div>
     <div class="render-controls">
      <div><label for="durationSeconds">Duration (seconds)</label><input id="durationSeconds" type="number" min="5" max="15.1" step="0.1" inputmode="decimal" value="15.1"><input id="duration" type="hidden" value="362"><div class="duration-hint" id="durationHint" role="status" aria-live="polite">Actual H3 length: 15.08 s · 362 frames at 24 fps.</div></div>
-     <div class="steps-control"><label for="steps">Sampling steps</label><div class="steps-row"><input id="steps" type="number" min="20" max="100" value="20"><div class="step-presets" id="stepPresets"><button type="button" data-steps="20">20</button><button type="button" data-steps="30">30</button><button type="button" data-steps="50">50</button></div></div><div class="steps-hint"><strong>20 recommended</strong> · Choose a preset or enter a custom value.</div></div>
+     <div class="steps-control"><label for="steps">Sampling steps</label><div class="steps-row"><input id="steps" type="number" min="8" max="100" value="20"><div class="step-presets" id="stepPresets"><button type="button" data-steps="20">20</button><button type="button" data-steps="30">30</button><button type="button" data-steps="50">50</button></div></div><div class="steps-hint"><strong>20 recommended</strong> · Choose a preset or enter a custom value.</div></div>
     </div>
     <div class="tip" id="stepAdvice">20 follows the ComfyUI H3 template. 30 or 50 take longer and are comparison choices, not guaranteed improvements. This interface allows up to 100; ComfyUI KSampler's technical limit is 10,000.</div>
     <div class="profile" id="profile"><strong>Quality baseline · 20 steps</strong><br>Original H3 path. Speed LoRAs and approximations are off by default.</div>
@@ -159,6 +159,6 @@
 <script src="./h3/graph-builder.js"></script>
 <script src="./h3/project-controller.js"></script>
 <script src="./lab-ui.js"></script>
-<script src="./studio.js?v=20261001-frames-node-fix"></script>
+<script src="./studio.js?v=20261003-steps-min8"></script>
 </body>
 </html>
