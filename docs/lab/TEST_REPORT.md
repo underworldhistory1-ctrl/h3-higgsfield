@@ -15,7 +15,7 @@ The original f1042d2 helper-only success report is superseded. Main UI/backend i
 
 ## Online inspection
 
-The authorized HyperAI server has production H3 on 8188, LTX backend on 8189 and LTX UI on 7860. The GPU was busy and container memory near its limit. No inference, interrupt, queue mutation, package upgrade, model download or production service restart was performed. V2 uses isolated source/data and port 8190; editing standby deliberately blocks inference.
+The authorized HyperAI server has production H3 on 8188, LTX backend on 8189 and LTX UI on 7860. The GPU was busy and container memory near its limit. No inference, interrupt, queue mutation, package upgrade, model download or production service restart was performed. V2 was deployed using isolated source/data and port 8190. A real browser connected through SSH, verified V2 branding, saved and reloaded a server-owned project, and verified disabled generation on video/image pages with zero JavaScript errors. Direct /prompt and /h3_studio/lab/jobs requests return HTTP 403; V2 queue remains empty. Existing production and LTX process IDs remained alive. Editing standby deliberately blocks inference.
 
 ## Pending GPU acceptance — do not claim passed
 

@@ -10,10 +10,12 @@ The follow-up implements connected workspace/project/asset/queue/guide/continuat
 | Python service/HTTP/context/FFmpeg checks | 80 tests passed |
 | JS helper contracts and syntax | 26 tests passed |
 | Real Chromium CPU browser acceptance | Passed; final replay after changes recorded in TEST_REPORT.md |
-| Isolated online deployment | Authorized; preparing CPU editing standby; full GPU process intentionally not started |
+| Isolated online deployment | Deployed on isolated port 8190; live browser save/reload passed; full GPU process intentionally not started |
 | GPU generation, latent/video context continuation, reference/keyframe output quality | Pending |
 | Multi-clip perceptual seams and lip sync | Pending |
 | Latent Upscaler and AudioRefine integration/quality | Not implemented; investigation only |
 | Production promotion | Blocked until the relevant live gates pass |
 
 Production code, queues, model files and service processes remain unchanged. A separate private V2 repository was created at https://github.com/underworldhistory1-ctrl/minimax-h3-higgsfield-v2. No weights or CUDA packages were installed locally; CPU test tensors and synthetic media do not constitute model inference.
+
+Online editing acceptance: V2 header/standby banner, disabled video and image generation, actual server-owned project save/reload, zero uncaught browser errors. Both /prompt and /h3_studio/lab/jobs reject inference with HTTP 403. Existing H3 and LTX process IDs remained alive.
