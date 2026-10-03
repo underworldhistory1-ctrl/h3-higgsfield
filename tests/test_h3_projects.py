@@ -100,8 +100,8 @@ class TestH3Projects(unittest.TestCase):
             }))
 
         # Python 3.10 on the deployed server does not provide file_digest.
-        with patch.object(hashlib, "file_digest", create=True):
-            del hashlib.file_digest
+        with patch.dict(hashlib.__dict__):
+            hashlib.__dict__.pop("file_digest", None)
             imported = service.import_bundle(str(bundle))
 
         contexts = list((output_root / "h3_lab_contexts").glob("*.json"))
