@@ -1,3 +1,4 @@
+# Preserved production-baseline example. Not enabled for isolated V2.
 name: Build Salad image
 
 on:
