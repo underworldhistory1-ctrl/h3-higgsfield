@@ -806,7 +806,7 @@ async def image_readiness(request):
         comfy_root = pathlib.Path(folder_paths.base_path).resolve()
     except (AttributeError, OSError):
         comfy_root = pathlib.Path(folder_paths.__file__).resolve().parent
-    profiles = qwen_profile_status(comfy_root)
+    profiles = qwen_profile_status(comfy_root, folder_paths_module=folder_paths)
     import nodes
     available = {name: name in nodes.NODE_CLASS_MAPPINGS for name in required_qwen_nodes()}
     return web.json_response({

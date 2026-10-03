@@ -21,6 +21,32 @@ const path=require('node:path');
   assert.deepEqual(errors,[],'Boot JS errors');
   assert.ok((await page.title()).includes('H3 Higgsfield V2'));
   assert.match(await page.locator('.brand-name').textContent(),/H3 Higgsfield.*V2/);
+  // A delayed terminal response from the previous run must not drain new uploads.
+  let releaseOldPoll;const oldPollGate=new Promise(resolve=>releaseOldPoll=resolve);
+  let oldPollReached;const oldPollSeen=new Promise(resolve=>oldPollReached=resolve);
+  await page.route('**/h3_studio/lab/jobs/race-old',async route=>{oldPollReached();await oldPollGate;await route.fulfill({json:{job_id:'race-old',state:'failed',error:'old failure'}});});
+  await page.evaluate(()=>{state.running='old-prompt';state.labJobId='race-old';state.runMeta={};state.busy=true;window.oldPoll=pollHistory();});
+  await oldPollSeen;
+  await page.evaluate(()=>{++state.generationEpoch;state.running=null;state.labJobId=null;state.runMeta=null;state.uploads=['new-reference-1.png','new-reference-2.png','new-reference-3.png'];state.busy=true;});
+  releaseOldPoll();await page.evaluate(()=>window.oldPoll);
+  assert.deepEqual(await page.evaluate(()=>state.uploads),['new-reference-1.png','new-reference-2.png','new-reference-3.png'],'Old job response cannot delete new uploads');
+  assert.equal(await page.evaluate(()=>state.busy),true,'Old job response cannot unlock new upload');
+  await page.unroute('**/h3_studio/lab/jobs/race-old');
+  await page.evaluate(()=>{state.uploads=[];state.running=null;state.labJobId=null;state.runMeta=null;setBusy(false);});
+  const oldCompletion=await page.evaluate(async()=>{
+    const originalFetch=window.fetch;let finishLibrary;
+    const delayedLibrary=new Promise(resolve=>finishLibrary=resolve);
+    window.fetch=(url,...args)=>String(url).includes('/h3_studio/library')?delayedLibrary:originalFetch(url,...args);
+    state.running='old-completion';state.busy=true;
+    const pending=completeImpl({filename:'h3_studio_abcdef123456_00001_.mp4',subfolder:'video',type:'output'});
+    ++state.generationEpoch;state.running='new-completion';state.uploads=['new-guide.png'];
+    window.fetch=originalFetch;
+    finishLibrary({ok:true,json:async()=>({items:[{filename:'h3_studio_abcdef123456_00001_.mp4'}]})});
+    await pending;
+    const result={running:state.running,uploads:[...state.uploads]};
+    state.running=null;state.uploads=[];setBusy(false);return result;
+  });
+  assert.deepEqual(oldCompletion,{running:'new-completion',uploads:['new-guide.png']},'Delayed old completion cannot consume a newer run');
   const png=await page.evaluate(async()=>{const c=document.createElement('canvas');c.width=640;c.height=360;c.getContext('2d').fillRect(0,0,640,360);return c.toDataURL('image/png').split(',')[1];});
   const image={name:'fixture.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')};
   await page.locator('[data-mode="refs"]').click();await page.locator('#fitImages').uncheck();
@@ -156,7 +182,7 @@ const path=require('node:path');
   await page.evaluate(()=>info('CPU acceptance passed. Imported continuation graph verified; model render remains untested.'));
   if(process.env.H3_TEST_SCREENSHOT) await page.screenshot({path:process.env.H3_TEST_SCREENSHOT,fullPage:true});
   assert.deepEqual(errors,[],'Interaction JS errors');
-  console.log(JSON.stringify({passed:true,checks:['V2 boot and visible branding','frames+guide submission','project reload hydration','restored image fit checkbox values','restored LoRA toggle and strength edits survive refresh','real Qwen import and startup handoff','server-confirmed cancellation','neutral custom native tags','lost acknowledgement reconciliation and cancellation','timed audio and AV clip native bindings','saved source fitting without image reupload','network response loss and request-id recovery','cancellation before submission acknowledgement','imported video extension graph','cancellation after queue acceptance before acknowledgement'],errors},null,2));
+  console.log(JSON.stringify({passed:true,checks:['V2 boot and visible branding','stale job response preserves newer uploads','stale completion preserves newer run','frames+guide submission','project reload hydration','restored image fit checkbox values','restored LoRA toggle and strength edits survive refresh','real Qwen import and startup handoff','server-confirmed cancellation','neutral custom native tags','lost acknowledgement reconciliation and cancellation','timed audio and AV clip native bindings','saved source fitting without image reupload','network response loss and request-id recovery','cancellation before submission acknowledgement','imported video extension graph','cancellation after queue acceptance before acknowledgement'],errors},null,2));
  }catch(error){console.error(error.stack);if(page) console.error(await page.evaluate(()=>({mode:state.mode,refs:state.refs.length,busy:state.busy,running:state.running,error:document.querySelector('#error').textContent,handoff:sessionStorage.getItem('h3_lab.imported_handoff'),job:state.runMeta?.request_id})).catch(()=>({}))); if(stderr)console.error(stderr);process.exitCode=1;}
  finally{if(browser)await browser.close();server.kill();}
 })();

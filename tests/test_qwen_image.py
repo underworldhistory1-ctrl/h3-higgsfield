@@ -19,6 +19,23 @@ class QwenImageContractTests(unittest.TestCase):
             self.assertEqual(len(profile["files"]), 3)
             self.assertTrue(all(len(item.sha256) == 64 for item in profile["files"]))
 
+    def test_profiles_resolve_shared_model_paths_without_local_copies(self):
+        from types import SimpleNamespace
+        qwen = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shared = root / "private-models"
+            shared.mkdir()
+            model = shared / "qwen.safetensors"
+            model.write_bytes(b"valid")
+            profile = {"label": "Test", "bytes": 5, "files": (qwen.ModelFile("diffusion_models", model.name, 5, ""),)}
+            resolver = SimpleNamespace(get_full_path=lambda folder, name: str(model))
+            with patch.object(qwen, "MODEL_PROFILES", {"int8": profile}):
+                self.assertFalse(qwen.profile_status(root / "isolated-comfy")["int8"]["ready"])
+                self.assertTrue(qwen.profile_status(root / "isolated-comfy", resolver)["int8"]["ready"])
+                model.write_bytes(b"bad")
+                self.assertEqual(qwen.profile_status(root / "isolated-comfy", resolver)["int8"]["invalid"], [model.name])
+
     def test_create_graph_uses_selected_profile_and_empty_latent(self):
         qwen = self.module()
         graph = qwen.build_qwen_graph(

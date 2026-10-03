@@ -69,14 +69,15 @@ def required_qwen_nodes():
     return REQUIRED_QWEN_NODES
 
 
-def profile_status(comfy_root):
+def profile_status(comfy_root, folder_paths_module=None):
     models = Path(comfy_root) / "models"
     result = {}
     for key, profile in MODEL_PROFILES.items():
         missing = []
         invalid = []
         for item in profile["files"]:
-            path = models / item.folder / item.name
+            resolved = folder_paths_module.get_full_path(item.folder, item.name) if folder_paths_module is not None else None
+            path = Path(resolved) if resolved else models / item.folder / item.name
             if not path.is_file():
                 missing.append(item.name)
             elif path.stat().st_size != item.size:

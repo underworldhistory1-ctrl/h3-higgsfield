@@ -902,9 +902,11 @@ function uploadOne(file,kind,onProgress=()=>{},onSent=()=>{},options={}) {
     xhr.send(data);
   });
 }
-async function cleanupUploads() {
-  const names=state.uploads.splice(0);
+async function cleanupUploads(capturedNames=null) {
+  const epoch=state.generationEpoch;
+  const names=capturedNames??state.uploads.splice(0);
   await Promise.allSettled(names.map(filename=>post("/h3_studio/discard",{filename})));
+  if(epoch!==state.generationEpoch)return;
   state.refs.forEach(ref=>{ref.uploadProgress=undefined;ref.uploadReady=false;});
   renderRefs();
 }
@@ -1134,7 +1136,7 @@ async function generate() {
   const epoch=++state.generationEpoch;
   let prompt,settings;
   try{
-    state.labJobId=null;
+    state.labJobId=null;state.runMeta=null;
     if(state.continuation){const c=state.continuation;
       if(c.source_canvas&&(c.source_canvas.width!==state.width||c.source_canvas.height!==state.height))throw Error("Continuation must use the source canvas.");
       if(c.type==="generated"&&c.source_model!==(state.mode==="refs"?modelRef:modelFL))throw Error("For another checkpoint, choose Video context and re-encode the source; direct latent switching has not been validated.");
@@ -1192,6 +1194,8 @@ async function generate() {
     const selectedMethod=method();
     settings=captureSettings();
     if(!await checkConnection())throw Error(state.labCapabilities?.inference_enabled===false?state.labCapabilities.reason:"Start ComfyUI or install the missing H3 models first.");
+    if(epoch!==state.generationEpoch)return;
+    if(state.busy||state.running)throw Error("A previous render is still being recovered. Wait for its status before starting another.");
     if(method()!==selectedMethod)throw Error("The selected render method is unavailable on this server. Review the method and try again.");
     if(selectedLoras.length&&!state.lorasLoaded)throw Error("Could not verify installed LoRAs. Refresh the list before generating.");
     const missingLora=selectedLoras.find(name=>!state.loras.some(item=>item.name===name));
@@ -1446,11 +1450,14 @@ async function complete(file){
   try{await completeImpl(file);}finally{state.completing=false;}
 }
 async function completeImpl(file){
+  const epoch=state.generationEpoch;
+  const expectedId=state.running;
   if(!state.running||!isStudioOutputName(file?.filename))return;
   try{
     const response=await fetch(api("/h3_studio/library"),{cache:"no-store"});
     if(!response.ok)throw Error("Library unavailable");
     const listed=((await response.json()).items||[]).some(item=>item.filename===file.filename);
+    if(epoch!==state.generationEpoch||state.running!==expectedId)return;
     if(!listed){
       state.outputMissingSince??=Date.now();
       if(Date.now()-state.outputMissingSince>10000){
@@ -1466,6 +1473,7 @@ async function completeImpl(file){
   state.running=null;
   state.labJobId=null;
   const completedEpoch=state.generationEpoch;
+  const completedUploads=state.uploads.splice(0);
   const actual=(Date.now()-state.started)/1000;
   const renderActual=(Date.now()-(state.renderStarted||state.started))/1000;
   const meta={...(state.runMeta||{}),elapsed:actual,renderElapsed:renderActual,completedAt:Date.now()};
@@ -1491,7 +1499,8 @@ async function completeImpl(file){
       if(projectCtrl.currentProject?.project_id===meta.project_id){projectCtrl.currentProject=saved;updateProjectUI(saved);}
     }catch(e){info("Video saved; attaching its take to the project failed: "+e.message,true);}
   }
-  const cleanup=cleanupUploads();
+  const cleanup=cleanupUploads(completedUploads);
+  if(completedEpoch!==state.generationEpoch){await cleanup;return;}
   setBusy(false);showVideo(entry);renderResults();
   focusWorkspace();
   saveSession();pollQueue();
@@ -1660,28 +1669,35 @@ async function pollHistory(){
 }
 async function pollHistoryImpl(){
   if(!state.running)return;
+  const epoch=state.generationEpoch;
+  let expectedId=state.running;
+  const stillCurrent=()=>epoch===state.generationEpoch&&state.running===expectedId&&!!state.running;
   if(String(state.running).startsWith("request:")&&state.runMeta?.submission){
     try{
       const lookup=await fetch(api(`/h3_studio/lab/jobs/by_request/${encodeURIComponent(state.runMeta.request_id)}`));
+      if(!stillCurrent())return;
       let record;
       if(lookup.status===404){
         const retry=await fetch(api("/h3_studio/lab/jobs"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.runMeta.submission)});
-        const response=await retry.json();record=response.job;
+        const response=await retry.json();if(!stillCurrent())return;record=response.job;
         if(!retry.ok&&retry.status<500){state.running=null;await cleanupUploads();setBusy(false);info(response.error||"Submission rejected",true);saveSession();return;}
       }else if(lookup.ok)record=await lookup.json();
-      if(record?.job_id){state.labJobId=record.job_id;state.runMeta.lab_job_id=record.job_id;state.running=record.prompt_id||"lab:"+record.job_id;saveSession();}
+      if(!stillCurrent())return;
+      if(record?.job_id){state.labJobId=record.job_id;state.runMeta.lab_job_id=record.job_id;state.running=record.prompt_id||"lab:"+record.job_id;expectedId=state.running;saveSession();}
     }catch{}
   }
+  if(!stillCurrent())return;
   const jobId=state.labJobId||state.runMeta?.lab_job_id;
   if(jobId){try{const job=await projectCtrl.fetchJson(`/h3_studio/lab/jobs/${encodeURIComponent(jobId)}`);
-    if(job.prompt_id){state.running=job.prompt_id;saveSession();}
+    if(!stillCurrent())return;
+    if(job.prompt_id){state.running=job.prompt_id;expectedId=state.running;saveSession();}
     if(job.state==="completed"&&job.output){await complete(job.output);return;}
     if(job.state==="cancelled"||job.state==="failed"){state.running=null;await cleanupUploads();setBusy(false);setProgress(job.state,0,null);info(job.error?JSON.stringify(job.error).slice(0,400):"Job "+job.state,job.state==="failed");saveSession();return;}
   }catch{} }
   if(!state.running||/^(lab|request):/.test(String(state.running)))return;
   try{
     const r=await fetch(api("/history/"+state.running));if(!r.ok)return;
-    const data=(await r.json())[state.running];if(!data)return;
+    const data=(await r.json())[state.running];if(!stillCurrent()||!data)return;
     const file=findVideoOutput(data.outputs?.["12"]);
     if(file){await complete(file);return;}
     if(data.status?.status_str==="error"){
@@ -1695,10 +1711,13 @@ async function pollHistoryImpl(){
   }catch{}
 }
 async function pollQueue(){
+  const epoch=state.generationEpoch;
+  const polledId=state.running;
   try{
     const r=await fetch(api("/queue"));if(!r.ok)throw Error("queue unavailable");
     if(state.serverMissingSince){state.serverMissingSince=null;if(state.running)setProgress("Connected · checking render progress",null,null,true);}
-    const data=await r.json(),running=data.queue_running||[],pending=data.queue_pending||[];
+    const data=await r.json();if(epoch!==state.generationEpoch||state.running!==polledId)return;
+    const running=data.queue_running||[],pending=data.queue_pending||[];
     const id=state.running;
     if(/^(lab|request):/.test(String(id))){$("queueInfo").textContent="Queue: reconciling saved submission · inputs retained";await pollHistory();return;}
     const runningItem=running.find(item=>item[1]===id);
@@ -1733,6 +1752,7 @@ async function pollQueue(){
     // History polling resolves jobs that finish while the browser is closed or the socket reconnects.
     if(id&&!runningHere&&position<0){
       await pollHistory();
+      if(epoch!==state.generationEpoch||state.running!==polledId)return;
       if(state.running){
         state.queueMissingSince??=Date.now();
         if(Date.now()-state.queueMissingSince>30000){
